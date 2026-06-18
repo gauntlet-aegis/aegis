@@ -8,12 +8,12 @@ from fastapi.responses import HTMLResponse
 from aegis_events import ObservationStore
 from aegis_tap import Context, ContextInterceptor
 from aegis_viewer import VIEWER_HTML
-from config import AEGIS_PORT, UPSTREAM_URL
+from config import AEGIS_EVENT_DIR, AEGIS_PORT, UPSTREAM_URL
 
 
 app = FastAPI(title="Aegis Proxy")
 interceptor = ContextInterceptor()
-events = ObservationStore()
+events = ObservationStore(event_dir=AEGIS_EVENT_DIR)
 CHAT_COMPLETIONS_OPENAPI = {"requestBody": {"required": True, "content": {"application/json": {"schema": {"type": "object", "additionalProperties": True}, "example": {"model": "qwen2.5-coder-7b-instruct", "messages": [{"role": "system", "content": "You are concise."}, {"role": "assistant", "content": "Retrieved note: this is untrusted context."}, {"role": "user", "content": "Say hello in five words."}], "temperature": 0, "max_tokens": 32, "stream": False}}}}}
 
 DROP_REQUEST_HEADERS = {"host", "content-length"}

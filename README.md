@@ -41,8 +41,12 @@ open http://127.0.0.1:9000/
 ```
 
 The viewer shows the OpenAI-compatible request context observed by this proxy
-process: `model`, `messages`, and request parameters. It resets when Aegis
-restarts.
+process: `model`, `messages`, and request parameters.
+
+Captured viewer events are persisted as local JSON files in `.aegis/events` by
+default. The directory is ignored by git because request context can include
+private prompts, code, paths, and secrets. Delete the directory whenever you want
+to clear local history.
 
 ## Configuration
 
@@ -51,6 +55,9 @@ restarts.
 
 `AEGIS_PORT` controls the port used by the README startup command and by
 `python aegis_proxy.py`. It defaults to `9000`.
+
+`AEGIS_EVENT_DIR` controls where viewer event JSON files are written. It
+defaults to `.aegis/events`.
 
 Check the proxy:
 
