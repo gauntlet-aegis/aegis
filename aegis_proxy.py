@@ -2,14 +2,18 @@ import json
 from typing import Any
 
 import httpx
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.responses import HTMLResponse
 
-from aegis_tap import Context, ContextInterceptor, view
+from aegis_events import ObservationStore
+from aegis_tap import Context, ContextInterceptor
+from aegis_viewer import VIEWER_HTML
 from config import AEGIS_PORT, UPSTREAM_URL
 
 
 app = FastAPI(title="Aegis Proxy")
 interceptor = ContextInterceptor()
+events = ObservationStore()
 CHAT_COMPLETIONS_OPENAPI = {"requestBody": {"required": True, "content": {"application/json": {"schema": {"type": "object", "additionalProperties": True}, "example": {"model": "qwen2.5-coder-7b-instruct", "messages": [{"role": "system", "content": "You are concise."}, {"role": "assistant", "content": "Retrieved note: this is untrusted context."}, {"role": "user", "content": "Say hello in five words."}], "temperature": 0, "max_tokens": 32, "stream": False}}}}}
 
 DROP_REQUEST_HEADERS = {"host", "content-length"}
@@ -24,6 +28,25 @@ async def healthz() -> dict[str, str]:
     return {"status": "ok", "upstream": UPSTREAM_URL}
 
 
+@app.get("/", response_class=HTMLResponse)
+@app.get("/viewer", response_class=HTMLResponse)
+async def viewer() -> str:
+    return VIEWER_HTML
+
+
+@app.get("/aegis/events")
+async def list_events() -> list[dict[str, Any]]:
+    return events.summaries()
+
+
+@app.get("/aegis/events/{event_id}")
+async def get_event(event_id: int) -> dict[str, Any]:
+    event = events.detail(event_id)
+    if event is None:
+        raise HTTPException(status_code=404, detail="Event not found")
+    return event
+
+
 @app.post("/v1/chat/completions", openapi_extra=CHAT_COMPLETIONS_OPENAPI)
 async def chat_completions(request: Request) -> Response:
     body = await request.body()
@@ -31,7 +54,8 @@ async def chat_completions(request: Request) -> Response:
 
     raw = _context_from_payload(payload)
     seen = interceptor.process(raw)
-    view(raw, seen, interceptor)
+    _print_request_context(payload)
+    event = events.start(payload, raw, seen, UPSTREAM_URL)
 
     # TODO: streaming. For now, stream=true passes upstream and buffers here.
     try:
@@ -43,8 +67,15 @@ async def chat_completions(request: Request) -> Response:
                 params=request.query_params,
             )
     except httpx.RequestError:
+        events.finish(event, status=502, error="Bad Gateway")
         return Response("Bad Gateway", status_code=502, media_type="text/plain")
 
+    events.finish(
+        event,
+        status=upstream.status_code,
+        content_type=upstream.headers.get("content-type", ""),
+        response_bytes=len(upstream.content),
+    )
     return Response(
         content=upstream.content,
         status_code=upstream.status_code,
@@ -111,6 +142,22 @@ def _content_to_text(content: Any) -> str:
 
 def _headers(items: Any, drop: set[str]) -> dict[str, str]:
     return {key: value for key, value in items if key.lower() not in drop}
+
+
+def _print_request_context(payload: dict[str, Any]) -> None:
+    print("=" * 78)
+    print("AEGIS REQUEST CONTEXT")
+    print("=" * 78)
+    print(json.dumps({
+        "model": payload.get("model"),
+        "messages": payload.get("messages", []),
+        "params": {
+            key: value
+            for key, value in payload.items()
+            if key not in {"model", "messages"}
+        },
+    }, indent=2, ensure_ascii=False))
+    print("=" * 78)
 
 
 if __name__ == "__main__":

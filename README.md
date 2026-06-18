@@ -31,9 +31,18 @@ curl localhost:9000/v1/chat/completions \
   -d '{"model":"local","messages":[{"role":"user","content":"hello"}],"stream":false}'
 ```
 
-Watch the Aegis terminal. Each request prints the two-pane raw vs.
-model-visible context view, and the DIFF line should read
-`identical (pass-through working)`.
+Watch the Aegis terminal. Each request prints the OpenAI-compatible request
+context that passed through Aegis before being forwarded unchanged.
+
+Open the local viewer:
+
+```bash
+open http://127.0.0.1:9000/
+```
+
+The viewer shows the OpenAI-compatible request context observed by this proxy
+process: `model`, `messages`, and request parameters. It resets when Aegis
+restarts.
 
 ## Configuration
 
@@ -47,4 +56,10 @@ Check the proxy:
 
 ```bash
 curl localhost:9000/healthz
+```
+
+Read captured events as JSON:
+
+```bash
+curl localhost:9000/aegis/events
 ```
