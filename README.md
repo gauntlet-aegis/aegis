@@ -12,13 +12,24 @@ Start llama.cpp on port `8080`:
 llama-server -m model.gguf --port 8080
 ```
 
-Install the proxy dependencies:
+Install the proxy dependencies into a virtual environment so they stay isolated
+from your system Python (otherwise `uvicorn` won't be on your `PATH`):
 
 ```bash
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Start Aegis on port `9000`:
+If you use [uv](https://docs.astral.sh/uv/), the equivalent is:
+
+```bash
+uv venv .venv
+uv pip install --python .venv -r requirements.txt
+source .venv/bin/activate
+```
+
+Start Aegis on port `9000` (with the venv activated):
 
 ```bash
 uvicorn aegis_proxy:app --host 127.0.0.1 --port "${AEGIS_PORT:-9000}"
