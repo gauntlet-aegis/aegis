@@ -1,7 +1,8 @@
 # Aegis
 
-Aegis is a local OpenAI-compatible proxy sidecar that observes chat-completion
-requests before forwarding them unchanged to a running llama.cpp server.
+Aegis is a local OpenAI-compatible proxy sidecar that observes Chat Completions
+and Responses API requests before forwarding them unchanged to a running
+llama.cpp server.
 
 ## Run locally
 
@@ -29,6 +30,33 @@ Point clients at Aegis instead of llama.cpp:
 curl localhost:9000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{"model":"local","messages":[{"role":"user","content":"hello"}],"stream":false}'
+```
+
+For Responses API clients:
+
+```bash
+curl localhost:9000/v1/responses \
+  -H "Content-Type: application/json" \
+  -d '{"model":"local","input":"hello","stream":false}'
+```
+
+Codex CLI expects the Responses API for custom providers. Create a user-level
+profile such as `~/.codex/aegis.config.toml`:
+
+```toml
+model = "local"
+model_provider = "aegis"
+
+[model_providers.aegis]
+name = "Aegis Local Proxy"
+base_url = "http://127.0.0.1:9000/v1"
+wire_api = "responses"
+```
+
+Then start Codex with:
+
+```bash
+codex --profile aegis
 ```
 
 Watch the Aegis terminal. Each request prints the OpenAI-compatible request

@@ -22,6 +22,7 @@ class Observation:
     raw_context: Context
     seen_context: Context
     upstream_url: str
+    endpoint: str = "/v1/chat/completions"
     started_at: float = field(default_factory=perf_counter)
     upstream_status: int | None = None
     upstream_content_type: str = ""
@@ -38,13 +39,18 @@ class Observation:
 
     def summary(self) -> dict[str, Any]:
         messages = _messages(self.request_payload)
+        input_items = _response_input_items(self.request_payload)
+        item_count = len(messages) if messages else len(input_items)
         return {
             "id": self.id,
             "created_at": self.created_at,
+            "endpoint": self.endpoint,
+            "request_kind": _request_kind(self.endpoint),
             "model": str(self.request_payload.get("model") or ""),
             "message_count": len(messages),
-            "roles": [str(message.get("role") or "unknown") for message in messages],
-            "preview": _last_user_message(messages),
+            "item_count": item_count,
+            "roles": _request_roles(messages, input_items),
+            "preview": _request_preview(self.request_payload, messages, input_items),
             "upstream_status": self.upstream_status,
             "latency_ms": self.latency_ms,
             "response_bytes": self.response_bytes,
@@ -56,10 +62,13 @@ class Observation:
         data.update({
             "request": self.request_payload,
             "messages": _messages(self.request_payload),
+            "instructions": self.request_payload.get("instructions"),
+            "input": self.request_payload.get("input"),
+            "input_items": _response_input_items(self.request_payload),
             "request_params": {
                 key: value
                 for key, value in self.request_payload.items()
-                if key != "messages"
+                if key not in {"messages", "instructions", "input"}
             },
             "upstream_url": self.upstream_url,
             "upstream_content_type": self.upstream_content_type,
@@ -79,7 +88,14 @@ class ObservationStore:
         if self._event_dir is not None:
             self._load()
 
-    def start(self, payload: dict[str, Any], raw: Context, seen: Context, upstream_url: str) -> Observation:
+    def start(
+        self,
+        payload: dict[str, Any],
+        raw: Context,
+        seen: Context,
+        upstream_url: str,
+        endpoint: str = "/v1/chat/completions",
+    ) -> Observation:
         with self._lock:
             event = Observation(
                 id=self._next_id,
@@ -88,6 +104,7 @@ class ObservationStore:
                 raw_context=raw,
                 seen_context=seen,
                 upstream_url=upstream_url,
+                endpoint=endpoint,
             )
             event.persist_path = self._path_for(event)
             self._next_id += 1
@@ -161,6 +178,7 @@ class ObservationStore:
             raw_context=empty_context,
             seen_context=empty_context,
             upstream_url=str(data.get("upstream_url") or ""),
+            endpoint=str(data.get("endpoint") or _infer_endpoint(request)),
             upstream_status=_optional_int(data.get("upstream_status")),
             upstream_content_type=str(data.get("upstream_content_type") or ""),
             response_bytes=_optional_int(data.get("response_bytes")) or 0,
@@ -199,6 +217,39 @@ def _messages(payload: dict[str, Any]) -> list[dict[str, Any]]:
     return [message for message in messages if isinstance(message, dict)] if isinstance(messages, list) else []
 
 
+def _response_input_items(payload: dict[str, Any]) -> list[Any]:
+    input_value = payload.get("input")
+    if isinstance(input_value, list):
+        return input_value
+    if input_value is None:
+        return []
+    return [input_value]
+
+
+def _request_roles(messages: list[dict[str, Any]], input_items: list[Any]) -> list[str]:
+    if messages:
+        return [str(message.get("role") or "unknown") for message in messages]
+    roles: list[str] = []
+    for item in input_items:
+        if isinstance(item, dict):
+            roles.append(str(item.get("role") or item.get("type") or "input"))
+        else:
+            roles.append("input")
+    return roles
+
+
+def _request_preview(payload: dict[str, Any], messages: list[dict[str, Any]], input_items: list[Any]) -> str:
+    message_preview = _last_user_message(messages)
+    if message_preview:
+        return message_preview
+
+    for item in reversed(input_items):
+        preview = _input_item_text(item)
+        if preview:
+            return preview
+    return _content_text(payload.get("instructions"))
+
+
 def _last_user_message(messages: list[dict[str, Any]]) -> str:
     for message in reversed(messages):
         if message.get("role") == "user":
@@ -206,12 +257,33 @@ def _last_user_message(messages: list[dict[str, Any]]) -> str:
     return ""
 
 
+def _input_item_text(item: Any) -> str:
+    if isinstance(item, dict):
+        if "content" in item:
+            return _content_text(item.get("content"))
+        if "text" in item:
+            return _content_text(item.get("text"))
+        return _content_text(item)
+    return _content_text(item)
+
+
 def _content_text(content: Any) -> str:
     if content is None:
         return ""
     if isinstance(content, str):
         return content
-    return str(content)
+    if isinstance(content, list):
+        return "\n".join(part for part in (_content_text(item) for item in content) if part)
+    if isinstance(content, dict):
+        text = content.get("text")
+        if isinstance(text, str):
+            return text
+        if "content" in content:
+            return _content_text(content.get("content"))
+    try:
+        return json.dumps(content, ensure_ascii=False, separators=(",", ":"))
+    except TypeError:
+        return str(content)
 
 
 def _parse_response(content: bytes, content_type: str) -> tuple[Any, str]:
@@ -250,6 +322,10 @@ def _stream_text(chunks: list[Any]) -> str:
     for chunk in chunks:
         if not isinstance(chunk, dict):
             continue
+        if isinstance(chunk.get("delta"), str):
+            parts.append(chunk["delta"])
+        if isinstance(chunk.get("text"), str):
+            parts.append(chunk["text"])
         for choice in chunk.get("choices") or []:
             if not isinstance(choice, dict):
                 continue
@@ -270,6 +346,10 @@ def _completion_text(payload: Any) -> str:
 def _assistant_messages(payload: Any, fallback: str) -> list[str]:
     messages: list[str] = []
     if isinstance(payload, dict):
+        for item in payload.get("output") or []:
+            text = _response_output_text(item)
+            if text:
+                messages.append(text)
         for choice in payload.get("choices") or []:
             if not isinstance(choice, dict):
                 continue
@@ -290,6 +370,40 @@ def _assistant_messages(payload: Any, fallback: str) -> list[str]:
     if not messages and fallback:
         messages.append(fallback)
     return messages
+
+
+def _response_output_text(item: Any) -> str:
+    if not isinstance(item, dict):
+        return ""
+    if item.get("type") != "message" and "content" not in item:
+        return ""
+
+    parts: list[str] = []
+    content = item.get("content")
+    if isinstance(content, list):
+        for part in content:
+            if isinstance(part, dict):
+                if part.get("type") in {"output_text", "text"}:
+                    parts.append(_content_text(part.get("text")))
+            else:
+                parts.append(_content_text(part))
+    elif content is not None:
+        parts.append(_content_text(content))
+    return "".join(parts)
+
+
+def _request_kind(endpoint: str) -> str:
+    if endpoint.endswith("/responses"):
+        return "responses"
+    if endpoint.endswith("/chat/completions"):
+        return "chat"
+    return "unknown"
+
+
+def _infer_endpoint(request: dict[str, Any]) -> str:
+    if "input" in request or "instructions" in request:
+        return "/v1/responses"
+    return "/v1/chat/completions"
 
 
 def _optional_int(value: Any) -> int | None:

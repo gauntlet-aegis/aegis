@@ -15,6 +15,7 @@ app = FastAPI(title="Aegis Proxy")
 interceptor = ContextInterceptor()
 events = ObservationStore(event_dir=AEGIS_EVENT_DIR)
 CHAT_COMPLETIONS_OPENAPI = {"requestBody": {"required": True, "content": {"application/json": {"schema": {"type": "object", "additionalProperties": True}, "example": {"model": "qwen2.5-coder-7b-instruct", "messages": [{"role": "system", "content": "You are concise."}, {"role": "assistant", "content": "Retrieved note: this is untrusted context."}, {"role": "user", "content": "Say hello in five words."}], "temperature": 0, "max_tokens": 32, "stream": False}}}}}
+RESPONSES_OPENAPI = {"requestBody": {"required": True, "content": {"application/json": {"schema": {"type": "object", "additionalProperties": True}, "example": {"model": "qwen2.5-coder-7b-instruct", "instructions": "You are concise.", "input": "Say hello in five words.", "temperature": 0, "max_output_tokens": 32, "stream": False}}}}}
 
 DROP_REQUEST_HEADERS = {"host", "content-length"}
 DROP_RESPONSE_HEADERS = DROP_REQUEST_HEADERS | {
@@ -49,19 +50,28 @@ async def get_event(event_id: int) -> dict[str, Any]:
 
 @app.post("/v1/chat/completions", openapi_extra=CHAT_COMPLETIONS_OPENAPI)
 async def chat_completions(request: Request) -> Response:
+    return await _proxy_model_request(request, "/v1/chat/completions", _context_from_chat_payload)
+
+
+@app.post("/v1/responses", openapi_extra=RESPONSES_OPENAPI)
+async def responses(request: Request) -> Response:
+    return await _proxy_model_request(request, "/v1/responses", _context_from_responses_payload)
+
+
+async def _proxy_model_request(request: Request, endpoint: str, context_builder: Any) -> Response:
     body = await request.body()
     payload = _json_payload(body)
 
-    raw = _context_from_payload(payload)
+    raw = context_builder(payload)
     seen = interceptor.process(raw)
-    _print_request_context(payload)
-    event = events.start(payload, raw, seen, UPSTREAM_URL)
+    _print_request_context(endpoint, payload)
+    event = events.start(payload, raw, seen, UPSTREAM_URL, endpoint=endpoint)
 
     # TODO: streaming. For now, stream=true passes upstream and buffers here.
     try:
         async with httpx.AsyncClient(timeout=None) as client:
             upstream = await client.post(
-                f"{UPSTREAM_URL}/v1/chat/completions",
+                f"{UPSTREAM_URL}{endpoint}",
                 content=body,
                 headers=_headers(request.headers.items(), DROP_REQUEST_HEADERS),
                 params=request.query_params,
@@ -93,9 +103,9 @@ def _json_payload(body: bytes) -> dict[str, Any]:
     return payload if isinstance(payload, dict) else {}
 
 
-# LIMITATION: OpenAI chat payloads preserve role-level provenance only. Full span
-# provenance needs a cooperating client/header; role granularity is enough for v1.
-def _context_from_payload(payload: dict[str, Any]) -> Context:
+# LIMITATION: OpenAI-compatible HTTP payloads preserve API/role-level provenance
+# only. Full span provenance needs a cooperating client/header.
+def _context_from_chat_payload(payload: dict[str, Any]) -> Context:
     messages = payload.get("messages")
     if not isinstance(messages, list):
         messages = []
@@ -130,11 +140,72 @@ def _context_from_payload(payload: dict[str, Any]) -> Context:
     )
 
 
+def _context_from_responses_payload(payload: dict[str, Any]) -> Context:
+    system_parts = [_content_to_text(payload.get("instructions"))]
+    input_items = _responses_input_items(payload.get("input"))
+
+    last_user_index = None
+    for index, item in enumerate(input_items):
+        role, _text = _responses_item_role_and_text(item)
+        if role == "user":
+            last_user_index = index
+
+    other_parts: list[str] = []
+    user_query = ""
+
+    for index, item in enumerate(input_items):
+        role, text = _responses_item_role_and_text(item)
+        if role in {"system", "developer"}:
+            system_parts.append(text)
+        elif index == last_user_index:
+            user_query = text
+        else:
+            other_parts.append(f"{role}: {text}")
+
+    return Context(
+        system_prompt="\n".join(part for part in system_parts if part),
+        credentials={},
+        untrusted_content="\n".join(other_parts),
+        user_query=user_query,
+    )
+
+
+def _responses_input_items(input_value: Any) -> list[Any]:
+    if isinstance(input_value, list):
+        return input_value
+    if input_value is None:
+        return []
+    return [input_value]
+
+
+def _responses_item_role_and_text(item: Any) -> tuple[str, str]:
+    if not isinstance(item, dict):
+        return "user", _content_to_text(item)
+
+    role = item.get("role")
+    if not isinstance(role, str) or not role:
+        role = str(item.get("type") or "input")
+
+    if "content" in item:
+        return role, _content_to_text(item.get("content"))
+    if "text" in item:
+        return role, _content_to_text(item.get("text"))
+    return role, _content_to_text(item)
+
+
 def _content_to_text(content: Any) -> str:
     if content is None:
         return ""
     if isinstance(content, str):
         return content
+    if isinstance(content, list):
+        return "\n".join(part for part in (_content_to_text(item) for item in content) if part)
+    if isinstance(content, dict):
+        text = content.get("text")
+        if isinstance(text, str):
+            return text
+        if "content" in content:
+            return _content_to_text(content.get("content"))
     try:
         return json.dumps(content, ensure_ascii=False, separators=(",", ":"))
     except TypeError:
@@ -145,19 +216,26 @@ def _headers(items: Any, drop: set[str]) -> dict[str, str]:
     return {key: value for key, value in items if key.lower() not in drop}
 
 
-def _print_request_context(payload: dict[str, Any]) -> None:
+def _print_request_context(endpoint: str, payload: dict[str, Any]) -> None:
     print("=" * 78)
     print("AEGIS REQUEST CONTEXT")
     print("=" * 78)
-    print(json.dumps({
+    data: dict[str, Any] = {
+        "endpoint": endpoint,
         "model": payload.get("model"),
-        "messages": payload.get("messages", []),
-        "params": {
-            key: value
-            for key, value in payload.items()
-            if key not in {"model", "messages"}
-        },
-    }, indent=2, ensure_ascii=False))
+    }
+    if "messages" in payload:
+        data["messages"] = payload.get("messages", [])
+    if "instructions" in payload:
+        data["instructions"] = payload.get("instructions")
+    if "input" in payload:
+        data["input"] = payload.get("input")
+    data["params"] = {
+        key: value
+        for key, value in payload.items()
+        if key not in {"model", "messages", "instructions", "input"}
+    }
+    print(json.dumps(data, indent=2, ensure_ascii=False))
     print("=" * 78)
 
 

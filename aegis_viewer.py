@@ -54,17 +54,29 @@ VIEWER_HTML = """<!doctype html>
       if (messages.length > 1) return messages.map((message, index) => `${index + 1}. ${message}`).join("\\n\\n");
       return event.response_text || event.error || "(no response body)";
     };
+    const itemCount = event => event.item_count ?? event.message_count ?? 0;
+    const itemLabel = event => event.request_kind === "responses" ? "inputs" : "messages";
+    const requestContext = event => {
+      if (event.request_kind === "responses") {
+        const instructions = event.instructions === undefined ? "" : event.instructions;
+        return `
+          <div class="block"><h3>Instructions</h3><pre>${esc(instructions)}</pre></div>
+          <div class="block"><h3>Input</h3><pre>${esc(event.input)}</pre></div>`;
+      }
+      return `<div class="block"><h3>Messages</h3><pre>${event.messages.map((message, index) => `${index + 1}. [${message.role || "unknown"}]\\n${text(message.content)}`).map(esc).join("\\n\\n")}</pre></div>`;
+    };
 
     async function loadEvents() {
       const events = await fetch("/aegis/events").then(r => r.json());
-      const signature = JSON.stringify(events.map(event => [event.id, event.upstream_status, event.latency_ms, event.response_bytes, event.message_count]));
+      const signature = JSON.stringify(events.map(event => [event.id, event.endpoint, event.upstream_status, event.latency_ms, event.response_bytes, itemCount(event)]));
       eventsEl.innerHTML = events.map(event => `
         <button class="event ${event.id === selectedId ? "active" : ""}" data-id="${event.id}" type="button">
           <span class="event-top"><span>#${event.id}</span><span>${esc(event.created_at)}</span></span>
           <span class="query">${esc(event.preview || "(no user message)")}</span>
           <span class="meta">
+            <span class="pill">${esc(event.request_kind || "chat")}</span>
             <span class="pill">${event.upstream_status || "pending"}</span>
-            <span class="pill">${event.message_count} messages</span>
+            <span class="pill">${itemCount(event)} ${itemLabel(event)}</span>
             <span class="pill">${event.latency_ms ?? "-"} ms</span>
           </span>
         </button>`).join("");
@@ -82,15 +94,16 @@ VIEWER_HTML = """<!doctype html>
       detailEl.className = "";
       detailEl.innerHTML = `
         <div class="toolbar">
-          <div class="title"><h2>${esc(event.model || "unknown model")}</h2><p>${esc(event.upstream_url)}</p></div>
+          <div class="title"><h2>${esc(event.model || "unknown model")}</h2><p>${esc(`${event.endpoint || ""} -> ${event.upstream_url || ""}`)}</p></div>
           <div class="stats">
+            <span class="pill">${esc(event.request_kind || "chat")}</span>
             <span class="pill">status ${event.upstream_status || "pending"}</span>
-            <span class="pill">${event.message_count} messages</span>
+            <span class="pill">${itemCount(event)} ${itemLabel(event)}</span>
             <span class="pill">${event.response_bytes} bytes</span>
             <span class="pill">${event.latency_ms ?? "-"} ms</span>
           </div>
         </div>
-        <div class="block"><h3>Messages</h3><pre>${event.messages.map((message, index) => `${index + 1}. [${message.role || "unknown"}]\\n${text(message.content)}`).map(esc).join("\\n\\n")}</pre></div>
+        ${requestContext(event)}
         <div class="block"><h3>Response</h3><pre>${esc(responseText(event))}</pre></div>
         <div class="grid">
           <div class="block"><h3>Response JSON</h3><pre>${esc(event.response)}</pre></div>
