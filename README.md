@@ -41,7 +41,7 @@ open http://127.0.0.1:9000/
 ```
 
 The viewer shows the OpenAI-compatible request context observed by this proxy
-process: `model`, `messages`, and request parameters.
+process plus the upstream response returned by llama.cpp.
 
 Captured viewer events are persisted as local JSON files in `.aegis/events` by
 default. The directory is ignored by git because request context can include

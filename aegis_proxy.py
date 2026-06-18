@@ -75,6 +75,7 @@ async def chat_completions(request: Request) -> Response:
         status=upstream.status_code,
         content_type=upstream.headers.get("content-type", ""),
         response_bytes=len(upstream.content),
+        response_content=upstream.content,
     )
     return Response(
         content=upstream.content,

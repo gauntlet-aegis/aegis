@@ -26,6 +26,8 @@ class Observation:
     upstream_status: int | None = None
     upstream_content_type: str = ""
     response_bytes: int = 0
+    response_payload: Any = None
+    response_text: str = ""
     error: str = ""
     latency_ms_value: int | None = None
     persist_path: Path | None = None
@@ -61,6 +63,9 @@ class Observation:
             },
             "upstream_url": self.upstream_url,
             "upstream_content_type": self.upstream_content_type,
+            "assistant_messages": _assistant_messages(self.response_payload, self.response_text),
+            "response_text": self.response_text,
+            "response": self.response_payload,
         })
         return data
 
@@ -96,12 +101,14 @@ class ObservationStore:
         status: int,
         content_type: str = "",
         response_bytes: int = 0,
+        response_content: bytes = b"",
         error: str = "",
     ) -> None:
         with self._lock:
             event.upstream_status = status
             event.upstream_content_type = content_type
             event.response_bytes = response_bytes
+            event.response_payload, event.response_text = _parse_response(response_content, content_type)
             event.error = error
             event.latency_ms_value = round((perf_counter() - event.started_at) * 1000)
             self._persist(event)
@@ -157,6 +164,8 @@ class ObservationStore:
             upstream_status=_optional_int(data.get("upstream_status")),
             upstream_content_type=str(data.get("upstream_content_type") or ""),
             response_bytes=_optional_int(data.get("response_bytes")) or 0,
+            response_payload=data.get("response"),
+            response_text=str(data.get("response_text") or ""),
             error=str(data.get("error") or ""),
             latency_ms_value=_optional_int(data.get("latency_ms")),
             persist_path=path,
@@ -203,6 +212,84 @@ def _content_text(content: Any) -> str:
     if isinstance(content, str):
         return content
     return str(content)
+
+
+def _parse_response(content: bytes, content_type: str) -> tuple[Any, str]:
+    if not content:
+        return None, ""
+
+    text = content.decode("utf-8", errors="replace")
+    if "text/event-stream" in content_type.lower() or text.lstrip().startswith("data:"):
+        chunks = _parse_sse_chunks(text)
+        return {"stream": True, "chunks": chunks} if chunks else None, _stream_text(chunks) or text
+
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        return None, text
+    return payload, _completion_text(payload)
+
+
+def _parse_sse_chunks(text: str) -> list[Any]:
+    chunks: list[Any] = []
+    for line in text.splitlines():
+        if not line.startswith("data:"):
+            continue
+        data = line.removeprefix("data:").strip()
+        if not data or data == "[DONE]":
+            continue
+        try:
+            chunks.append(json.loads(data))
+        except json.JSONDecodeError:
+            chunks.append(data)
+    return chunks
+
+
+def _stream_text(chunks: list[Any]) -> str:
+    parts: list[str] = []
+    for chunk in chunks:
+        if not isinstance(chunk, dict):
+            continue
+        for choice in chunk.get("choices") or []:
+            if not isinstance(choice, dict):
+                continue
+            delta = choice.get("delta")
+            message = choice.get("message")
+            if isinstance(delta, dict):
+                parts.append(_content_text(delta.get("content")))
+            elif isinstance(message, dict):
+                parts.append(_content_text(message.get("content")))
+    return "".join(parts)
+
+
+def _completion_text(payload: Any) -> str:
+    messages = _assistant_messages(payload, "")
+    return "\n\n".join(messages)
+
+
+def _assistant_messages(payload: Any, fallback: str) -> list[str]:
+    messages: list[str] = []
+    if isinstance(payload, dict):
+        for choice in payload.get("choices") or []:
+            if not isinstance(choice, dict):
+                continue
+            message = choice.get("message")
+            delta = choice.get("delta")
+            text = ""
+            if isinstance(message, dict):
+                text = _content_text(message.get("content"))
+            elif isinstance(delta, dict):
+                text = _content_text(delta.get("content"))
+            if text:
+                messages.append(text)
+        chunks = payload.get("chunks")
+        if isinstance(chunks, list):
+            stream_text = _stream_text(chunks)
+            if stream_text:
+                messages.append(stream_text)
+    if not messages and fallback:
+        messages.append(fallback)
+    return messages
 
 
 def _optional_int(value: Any) -> int | None:

@@ -30,7 +30,8 @@ VIEWER_HTML = """<!doctype html>
     .title p { margin: 0; color: var(--muted); }
     .stats { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
     .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
-    .block { border: 1px solid var(--line); border-radius: 8px; min-width: 0; overflow: hidden; background: #fff; }
+    .block { border: 1px solid var(--line); border-radius: 8px; min-width: 0; overflow: hidden; background: #fff; margin-bottom: 16px; }
+    .grid .block { margin-bottom: 0; }
     .block h3 { margin: 0; padding: 10px 12px; border-bottom: 1px solid var(--line); font-size: 13px; background: #fbfcfe; }
     pre { margin: 0; padding: 12px; white-space: pre-wrap; overflow-wrap: anywhere; min-height: 160px; max-height: 46vh; overflow: auto; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
     @media (max-width: 820px) { main { grid-template-columns: 1fr; height: auto; } aside { max-height: 38vh; border-right: 0; border-bottom: 1px solid var(--line); } .grid { grid-template-columns: 1fr; } }
@@ -47,6 +48,12 @@ VIEWER_HTML = """<!doctype html>
 
     const text = value => value === null || value === undefined || value === "" ? "empty" : typeof value === "string" ? value : JSON.stringify(value, null, 2);
     const esc = value => text(value).replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
+    const responseText = event => {
+      const messages = Array.isArray(event.assistant_messages) ? event.assistant_messages.filter(Boolean) : [];
+      if (messages.length === 1) return messages[0];
+      if (messages.length > 1) return messages.map((message, index) => `${index + 1}. ${message}`).join("\\n\\n");
+      return event.response_text || event.error || "(no response body)";
+    };
 
     async function loadEvents() {
       const events = await fetch("/aegis/events").then(r => r.json());
@@ -84,10 +91,12 @@ VIEWER_HTML = """<!doctype html>
           </div>
         </div>
         <div class="block"><h3>Messages</h3><pre>${event.messages.map((message, index) => `${index + 1}. [${message.role || "unknown"}]\\n${text(message.content)}`).map(esc).join("\\n\\n")}</pre></div>
+        <div class="block"><h3>Response</h3><pre>${esc(responseText(event))}</pre></div>
         <div class="grid">
+          <div class="block"><h3>Response JSON</h3><pre>${esc(event.response)}</pre></div>
           <div class="block"><h3>Request Params</h3><pre>${esc(event.request_params)}</pre></div>
-          <div class="block"><h3>Request JSON</h3><pre>${esc(event.request)}</pre></div>
-        </div>`;
+        </div>
+        <div class="block"><h3>Request JSON</h3><pre>${esc(event.request)}</pre></div>`;
     }
 
     function renderEmpty() {
