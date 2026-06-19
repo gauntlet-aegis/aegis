@@ -3,11 +3,12 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Literal, TypeAlias
+from typing import Literal, Protocol, TypeAlias
 
 import numpy as np
 import torch
 from numpy.typing import NDArray
+from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, confusion_matrix, f1_score
 
 from aegis_introspection.artifacts import ActivationArtifact
@@ -28,7 +29,21 @@ from aegis_introspection.binary_tasks import (
 from aegis_introspection.probe import IntVector, JsonValue, encode_labels, tensor_to_float_matrix
 
 
-CiftAblationRepresentation: TypeAlias = Literal["diagonal_distance", "standardized_residual_concat"]
+CiftAblationRepresentation: TypeAlias = Literal[
+    "diagonal_distance",
+    "standardized_residual_concat",
+    "absolute_standardized_residual_concat",
+]
+CiftAblationClassifierMode: TypeAlias = Literal["standard_scaled_logreg", "raw_logreg"]
+FloatMatrix: TypeAlias = NDArray[np.float64]
+
+
+class _Classifier(Protocol):
+    def fit(self, matrix: FloatMatrix, labels: IntVector) -> "_Classifier":
+        ...
+
+    def predict(self, matrix: FloatMatrix) -> IntVector:
+        ...
 
 
 @dataclass(frozen=True)
@@ -38,6 +53,7 @@ class CiftAblationVariant:
     source_feature_keys: tuple[str, ...]
     calibration_source_labels: tuple[str, ...]
     representation: CiftAblationRepresentation
+    classifier_mode: CiftAblationClassifierMode
     ridge: float
 
 
@@ -51,6 +67,7 @@ class CiftAblationDataset:
 class CiftAblationVariantReport:
     variant_id: str
     representation: CiftAblationRepresentation
+    classifier_mode: CiftAblationClassifierMode
     feature_name: str
     source_feature_keys: tuple[str, ...]
     calibration_source_labels: tuple[str, ...]
@@ -124,10 +141,19 @@ def _validate_variant(variant: CiftAblationVariant) -> None:
         raise BinaryTaskError(f"CIFT ablation variant '{variant.variant_id}' requires calibration labels.")
     if variant.ridge <= 0:
         raise BinaryTaskError(f"CIFT ablation variant '{variant.variant_id}' ridge must be greater than 0.")
-    if variant.representation not in ("diagonal_distance", "standardized_residual_concat"):
+    if variant.representation not in (
+        "diagonal_distance",
+        "standardized_residual_concat",
+        "absolute_standardized_residual_concat",
+    ):
         raise BinaryTaskError(
             f"CIFT ablation variant '{variant.variant_id}' has unsupported representation "
             f"'{variant.representation}'."
+        )
+    if variant.classifier_mode not in ("standard_scaled_logreg", "raw_logreg"):
+        raise BinaryTaskError(
+            f"CIFT ablation variant '{variant.variant_id}' has unsupported classifier mode "
+            f"'{variant.classifier_mode}'."
         )
 
 
@@ -272,6 +298,20 @@ def _standardized_residual_matrix(
     return torch.cat(layer_residuals, dim=1)
 
 
+def _absolute_standardized_residual_matrix(
+    artifact: ActivationArtifact,
+    artifact_indices: tuple[int, ...],
+    calibration: _AblationCalibration,
+) -> torch.Tensor:
+    return torch.abs(
+        _standardized_residual_matrix(
+            artifact=artifact,
+            artifact_indices=artifact_indices,
+            calibration=calibration,
+        )
+    )
+
+
 def _transform_variant(
     artifact: ActivationArtifact,
     artifact_indices: tuple[int, ...],
@@ -287,6 +327,12 @@ def _transform_variant(
         )
     if calibration.variant.representation == "standardized_residual_concat":
         return _standardized_residual_matrix(
+            artifact=artifact,
+            artifact_indices=artifact_indices,
+            calibration=calibration,
+        )
+    if calibration.variant.representation == "absolute_standardized_residual_concat":
+        return _absolute_standardized_residual_matrix(
             artifact=artifact,
             artifact_indices=artifact_indices,
             calibration=calibration,
@@ -359,6 +405,7 @@ def _variant_report(variant: CiftAblationVariant, method: BinaryMethodReport) ->
     return CiftAblationVariantReport(
         variant_id=variant.variant_id,
         representation=variant.representation,
+        classifier_mode=variant.classifier_mode,
         feature_name=variant.feature_name,
         source_feature_keys=variant.source_feature_keys,
         calibration_source_labels=variant.calibration_source_labels,
@@ -372,6 +419,22 @@ def _variant_report(variant: CiftAblationVariant, method: BinaryMethodReport) ->
         macro_f1_std=method.macro_f1_std,
         confusion_matrix=method.confusion_matrix,
         folds=method.folds,
+    )
+
+
+def _build_variant_classifier(config: BinaryTaskConfig, variant: CiftAblationVariant) -> _Classifier:
+    if variant.classifier_mode == "standard_scaled_logreg":
+        return build_activation_classifier(config)
+    if variant.classifier_mode == "raw_logreg":
+        return LogisticRegression(
+            C=config.regularization_c,
+            class_weight="balanced",
+            max_iter=config.max_iter,
+            random_state=config.random_seed,
+        )
+    raise BinaryTaskError(
+        f"CIFT ablation variant '{variant.variant_id}' has unsupported classifier mode "
+        f"'{variant.classifier_mode}'."
     )
 
 
@@ -418,7 +481,7 @@ def evaluate_grouped_cift_ablation_variant(
                 calibration=calibration,
             )
         )
-        classifier = build_activation_classifier(binary_config)
+        classifier = _build_variant_classifier(binary_config, variant)
         classifier.fit(train_matrix, encoded_labels[split.train_indices])
         predictions = classifier.predict(test_matrix).astype(np.int64, copy=False)
         fold_predictions.append((split.fold_index, encoded_labels[split.test_indices], predictions))
@@ -565,6 +628,7 @@ def _variant_to_json(variant: CiftAblationVariantReport) -> dict[str, JsonValue]
     return {
         "variant_id": variant.variant_id,
         "representation": variant.representation,
+        "classifier_mode": variant.classifier_mode,
         "feature_name": variant.feature_name,
         "source_feature_keys": list(variant.source_feature_keys),
         "calibration_source_labels": list(variant.calibration_source_labels),
@@ -661,8 +725,8 @@ def render_cift_ablation_markdown(report: CiftAblationReport) -> str:
             "",
             "## Aggregate by Variant",
             "",
-            "| Variant | Representation | Calibration Labels | Mean Macro F1 | Min Macro F1 |",
-            "|---|---|---|---:|---:|",
+            "| Variant | Representation | Classifier Mode | Calibration Labels | Mean Macro F1 | Min Macro F1 |",
+            "|---|---|---|---|---:|---:|",
         ]
     )
     first_dataset = report.datasets[0]
@@ -677,6 +741,7 @@ def render_cift_ablation_markdown(report: CiftAblationReport) -> str:
         lines.append(
             f"| `{first_variant.feature_name}` | "
             f"`{first_variant.representation}` | "
+            f"`{first_variant.classifier_mode}` | "
             f"`{_joined(first_variant.calibration_source_labels)}` | "
             f"{_mean(macro_f1_scores):.4f} | "
             f"{min(macro_f1_scores):.4f} |"
@@ -687,8 +752,8 @@ def render_cift_ablation_markdown(report: CiftAblationReport) -> str:
             "",
             "## Variant Results",
             "",
-            "| Dataset | Variant | Representation | Calibration Labels | Macro F1 | Delta Macro F1 |",
-            "|---|---|---|---|---:|---:|",
+            "| Dataset | Variant | Representation | Classifier Mode | Calibration Labels | Macro F1 | Delta Macro F1 |",
+            "|---|---|---|---|---|---:|---:|",
         ]
     )
     for dataset in report.datasets:
@@ -697,6 +762,7 @@ def render_cift_ablation_markdown(report: CiftAblationReport) -> str:
                 f"| `{dataset.dataset_id}` | "
                 f"`{variant.feature_name}` | "
                 f"`{variant.representation}` | "
+                f"`{variant.classifier_mode}` | "
                 f"`{_joined(variant.calibration_source_labels)}` | "
                 f"{variant.macro_f1_mean:.4f} | "
                 f"{variant.macro_f1_mean - dataset.baseline.macro_f1_mean:+.4f} |"

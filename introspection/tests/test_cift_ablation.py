@@ -135,6 +135,7 @@ def _variants() -> tuple[CiftAblationVariant, ...]:
             source_feature_keys=("final_token_layer_06", "final_token_layer_07"),
             calibration_source_labels=("benign", "secret_present_safe"),
             representation="diagonal_distance",
+            classifier_mode="standard_scaled_logreg",
             ridge=0.001,
         ),
         CiftAblationVariant(
@@ -143,6 +144,16 @@ def _variants() -> tuple[CiftAblationVariant, ...]:
             source_feature_keys=("final_token_layer_06", "final_token_layer_07"),
             calibration_source_labels=("benign", "secret_present_safe"),
             representation="standardized_residual_concat",
+            classifier_mode="standard_scaled_logreg",
+            ridge=0.001,
+        ),
+        CiftAblationVariant(
+            variant_id="absolute_residual_raw_nonleaking",
+            feature_name="cift_abs_residual_raw_nonleaking_final_token_last_quarter",
+            source_feature_keys=("final_token_layer_06", "final_token_layer_07"),
+            calibration_source_labels=("benign", "secret_present_safe"),
+            representation="absolute_standardized_residual_concat",
+            classifier_mode="raw_logreg",
             ridge=0.001,
         ),
     )
@@ -160,11 +171,15 @@ class CiftAblationTest(unittest.TestCase):
 
         self.assertEqual("safe_secret_vs_exfiltration", report.task_name)
         self.assertEqual("weak_baseline_feature", report.baseline_feature_key)
-        self.assertEqual(2, report.variant_count)
+        self.assertEqual(3, report.variant_count)
         self.assertEqual(1, report.dataset_count)
         self.assertEqual(1, report.ablation_win_count)
         self.assertEqual(0, report.baseline_win_count)
         self.assertEqual("synthetic_hard", report.datasets[0].dataset_id)
+        self.assertEqual(
+            ("standard_scaled_logreg", "standard_scaled_logreg", "raw_logreg"),
+            tuple(variant.classifier_mode for variant in report.datasets[0].variants),
+        )
         self.assertGreater(report.datasets[0].best_variant.macro_f1_mean, report.datasets[0].baseline.macro_f1_mean)
 
     def test_render_cift_ablation_markdown_includes_variant_table(self) -> None:
@@ -180,8 +195,14 @@ class CiftAblationTest(unittest.TestCase):
 
         self.assertIn("# CIFT-Like Ablation", markdown)
         self.assertIn("Baseline feature: `weak_baseline_feature`", markdown)
-        self.assertIn("| Variant | Representation | Calibration Labels | Mean Macro F1 | Min Macro F1 |", markdown)
-        self.assertIn("| Dataset | Variant | Representation | Calibration Labels | Macro F1 | Delta Macro F1 |", markdown)
+        self.assertIn(
+            "| Variant | Representation | Classifier Mode | Calibration Labels | Mean Macro F1 | Min Macro F1 |",
+            markdown,
+        )
+        self.assertIn(
+            "| Dataset | Variant | Representation | Classifier Mode | Calibration Labels | Macro F1 | Delta Macro F1 |",
+            markdown,
+        )
 
     def test_write_cift_ablation_outputs_creates_files(self) -> None:
         report = compare_grouped_cift_ablation(
@@ -201,8 +222,9 @@ class CiftAblationTest(unittest.TestCase):
             decoded = json.loads(json_path.read_text(encoding="utf-8"))
             markdown = markdown_path.read_text(encoding="utf-8")
 
-        self.assertEqual(2, decoded["variant_count"])
+        self.assertEqual(3, decoded["variant_count"])
         self.assertEqual(1, decoded["ablation_win_count"])
+        self.assertEqual("raw_logreg", decoded["datasets"][0]["variants"][2]["classifier_mode"])
         self.assertIn("CIFT-Like Ablation", markdown)
 
 

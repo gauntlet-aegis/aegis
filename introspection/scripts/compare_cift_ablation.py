@@ -16,6 +16,7 @@ from aegis_introspection.artifacts import load_activation_artifact
 from aegis_introspection.binary_tasks import BinaryTaskConfig
 from aegis_introspection.cift import last_quarter_readout_feature_keys
 from aegis_introspection.cift_ablation import (
+    CiftAblationClassifierMode,
     CiftAblationDataset,
     CiftAblationRepresentation,
     CiftAblationVariant,
@@ -41,6 +42,7 @@ class CompareCiftAblationScriptConfig:
     baseline_feature_key: str
     pooling_methods: tuple[PoolingMethod, ...]
     representations: tuple[CiftAblationRepresentation, ...]
+    classifier_modes: tuple[CiftAblationClassifierMode, ...]
     calibration_sets: tuple[str, ...]
     ridge: float
     fold_count: int
@@ -71,12 +73,12 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--output-json",
         required=False,
-        default=str(INTROSPECTION_ROOT / "data" / "reports" / "cift_like_ablation_v2.json"),
+        default=str(INTROSPECTION_ROOT / "data" / "reports" / "cift_like_ablation_v3.json"),
     )
     parser.add_argument(
         "--output-md",
         required=False,
-        default=str(INTROSPECTION_ROOT / "data" / "reports" / "cift_like_ablation_v2_summary.md"),
+        default=str(INTROSPECTION_ROOT / "data" / "reports" / "cift_like_ablation_v3_summary.md"),
     )
     parser.add_argument("--task", required=False, default="safe_secret_vs_exfiltration")
     parser.add_argument(
@@ -95,8 +97,15 @@ def _build_parser() -> argparse.ArgumentParser:
         "--representation",
         required=False,
         action="append",
-        choices=("diagonal_distance", "standardized_residual_concat"),
-        help="CIFT-like row representation. Defaults to both supported representations.",
+        choices=("diagonal_distance", "standardized_residual_concat", "absolute_standardized_residual_concat"),
+        help="CIFT-like row representation. Defaults to all supported representations.",
+    )
+    parser.add_argument(
+        "--classifier-mode",
+        required=False,
+        action="append",
+        choices=("standard_scaled_logreg", "raw_logreg"),
+        help="Classifier mode for CIFT-like features. Defaults to both supported modes.",
     )
     parser.add_argument(
         "--calibration-set",
@@ -144,12 +153,25 @@ def _unique_pooling_methods(values: Sequence[str] | None) -> tuple[PoolingMethod
 
 
 def _unique_representations(values: Sequence[str] | None) -> tuple[CiftAblationRepresentation, ...]:
-    raw_values = tuple(values) if values is not None else ("diagonal_distance", "standardized_residual_concat")
+    raw_values = (
+        tuple(values)
+        if values is not None
+        else ("diagonal_distance", "standardized_residual_concat", "absolute_standardized_residual_concat")
+    )
     if len(raw_values) == 0:
         raise ValueError("At least one representation is required.")
     if len(set(raw_values)) != len(raw_values):
         raise ValueError("Representations must be unique.")
     return tuple(cast(CiftAblationRepresentation, value) for value in raw_values)
+
+
+def _unique_classifier_modes(values: Sequence[str] | None) -> tuple[CiftAblationClassifierMode, ...]:
+    raw_values = tuple(values) if values is not None else ("standard_scaled_logreg", "raw_logreg")
+    if len(raw_values) == 0:
+        raise ValueError("At least one classifier mode is required.")
+    if len(set(raw_values)) != len(raw_values):
+        raise ValueError("Classifier modes must be unique.")
+    return tuple(cast(CiftAblationClassifierMode, value) for value in raw_values)
 
 
 def _unique_calibration_sets(values: Sequence[str] | None) -> tuple[str, ...]:
@@ -171,6 +193,7 @@ def _parse_args(argv: Sequence[str]) -> CompareCiftAblationScriptConfig:
         baseline_feature_key=str(namespace.baseline_feature),
         pooling_methods=_unique_pooling_methods(namespace.pooling_method),
         representations=_unique_representations(namespace.representation),
+        classifier_modes=_unique_classifier_modes(namespace.classifier_mode),
         calibration_sets=_unique_calibration_sets(namespace.calibration_set),
         ridge=float(namespace.ridge),
         fold_count=int(namespace.folds),
@@ -217,7 +240,17 @@ def _representation_name(representation: CiftAblationRepresentation) -> str:
         return "diag"
     if representation == "standardized_residual_concat":
         return "residual"
+    if representation == "absolute_standardized_residual_concat":
+        return "abs_residual"
     raise ValueError(f"Unsupported representation '{representation}'.")
+
+
+def _classifier_mode_name(classifier_mode: CiftAblationClassifierMode) -> str:
+    if classifier_mode == "standard_scaled_logreg":
+        return "scaled"
+    if classifier_mode == "raw_logreg":
+        return "raw"
+    raise ValueError(f"Unsupported classifier mode '{classifier_mode}'.")
 
 
 def _variants(
@@ -232,18 +265,24 @@ def _variants(
         source_feature_keys = last_quarter_readout_feature_keys(datasets[0].artifact, pooling_method)
         for representation in config.representations:
             representation_name = _representation_name(representation)
-            for calibration_set in config.calibration_sets:
-                variant_id = f"{representation_name}_{calibration_set}_{pooling_method}_last_quarter"
-                variants.append(
-                    CiftAblationVariant(
-                        variant_id=variant_id,
-                        feature_name=f"cift_{variant_id}",
-                        source_feature_keys=source_feature_keys,
-                        calibration_source_labels=_calibration_source_labels(calibration_set),
-                        representation=representation,
-                        ridge=config.ridge,
+            for classifier_mode in config.classifier_modes:
+                classifier_mode_name = _classifier_mode_name(classifier_mode)
+                for calibration_set in config.calibration_sets:
+                    variant_id = (
+                        f"{representation_name}_{classifier_mode_name}_{calibration_set}_"
+                        f"{pooling_method}_last_quarter"
                     )
-                )
+                    variants.append(
+                        CiftAblationVariant(
+                            variant_id=variant_id,
+                            feature_name=f"cift_{variant_id}",
+                            source_feature_keys=source_feature_keys,
+                            calibration_source_labels=_calibration_source_labels(calibration_set),
+                            representation=representation,
+                            classifier_mode=classifier_mode,
+                            ridge=config.ridge,
+                        )
+                    )
     return tuple(variants)
 
 
