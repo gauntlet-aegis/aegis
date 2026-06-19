@@ -1,0 +1,20 @@
+# Sentinel — black-box configuration (API-only; CIFT is dropped by the registry).
+mode: blackbox
+device: cpu
+max_new_tokens: 256
+host: 127.0.0.1
+port: 8001
+event_dir: .aegis/events
+
+blackbox:
+  base_url: https://api.openai.com/v1
+  model: gpt-4o-mini
+  api_key_env: OPENAI_API_KEY
+
+dp_honey:
+  epsilon: 1.0
+  alpha: 0.05
+
+nimbus:
+  budget_bits: 16.0
+  n_neg: 63
