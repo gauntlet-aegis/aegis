@@ -492,6 +492,23 @@ and `mean_pool_layer_28`. That points the next CIFT branch toward source-score
 calibration and readout design rather than threshold tuning or single-source
 pruning.
 
+A first source-score calibration comparison tested that branch without changing
+the source heads, source set, or `meta_c_10` operating point. The raw source
+probability control remains the best Hard V2/Hard V3 result:
+
+| Source-Score Rule | Candidate Errors | Fixed | Persistent | Introduced | Net Error Delta | Mean Accuracy |
+|---|---:|---:|---:|---:|---:|---:|
+| Raw probability | 9 | 5 | 4 | 5 | 0 | 0.9250 |
+| Clipped logit | 11 | 7 | 2 | 9 | 2 | 0.9083 |
+| Platt probability | 10 | 5 | 4 | 6 | 1 | 0.9167 |
+
+The split is informative: clipped logits improve Hard V3 to 2 candidate errors
+but damage Hard V2, while Platt scaling stays closer to the raw control but
+still adds one aggregate error. This suggests the current source probabilities
+are not the only bottleneck. The next CIFT-like experiment should test richer
+readout/source design, such as separating final-token and mean-pool source
+families or adding decision-position readouts, before more calibration variants.
+
 ## Project Layout
 
 ```text
@@ -775,6 +792,13 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/sheep/Desktop/Gauntlet/Capstone/intr
   /Users/sheep/Desktop/Gauntlet/Capstone/.venv-introspection/bin/python introspection/scripts/diagnose_cift_meta_regularization.py
 ```
 
+Run CIFT meta-head source-score calibration comparisons:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/sheep/Desktop/Gauntlet/Capstone/introspection/src \
+  /Users/sheep/Desktop/Gauntlet/Capstone/.venv-introspection/bin/python introspection/scripts/compare_cift_meta_score_calibration.py
+```
+
 Build the Hard V3 combined-regression adjudication worksheet:
 
 ```bash
@@ -849,6 +873,7 @@ Key human-readable checkpoints:
 - `data/reports/cift_meta_regularization_sweep_v1_summary.md`
 - `data/reports/cift_meta_regularization_crosscheck_v1_summary.md`
 - `data/reports/cift_meta_regularization_diagnostics_hard_v2_meta_c_10_v1_summary.md`
+- `data/reports/cift_meta_score_calibration_v1_summary.md`
 
 Key machine-readable reports registered in lineage:
 
@@ -895,6 +920,7 @@ Key machine-readable reports registered in lineage:
 - `data/reports/cift_meta_regularization_sweep_v1.json`
 - `data/reports/cift_meta_regularization_crosscheck_v1.json`
 - `data/reports/cift_meta_regularization_diagnostics_hard_v2_meta_c_10_v1.json`
+- `data/reports/cift_meta_score_calibration_v1.json`
 
 ## Next Moves
 
@@ -914,8 +940,8 @@ Recommended sequence:
 4. Define a promotion rule that weighs average performance, worst-case
    checkpoint performance, and post-hoc discovery risk.
 5. For CIFT-like work, treat `meta_c_10` as the current regularized diagnostic
-   target and test source-score calibration/readout variants against its Hard
-   V2 residuals before any promotion decision.
+   target and test richer readout/source variants against its Hard V2 residuals
+   before any promotion decision.
 6. Keep registering every dataset, artifact, and machine-readable report in
    `data/lineage.json`.
 
