@@ -62,6 +62,44 @@ class ResidualErrorComparisonReport:
     family_summaries: tuple[ResidualErrorFamilySummary, ...]
 
 
+@dataclass(frozen=True)
+class ResidualErrorSuiteInput:
+    dataset_id: str
+    reference_report: BinaryErrorAnalysisReport
+    candidate_report: BinaryErrorAnalysisReport
+
+
+@dataclass(frozen=True)
+class DatasetResidualErrorComparison:
+    dataset_id: str
+    comparison: ResidualErrorComparisonReport
+
+
+@dataclass(frozen=True)
+class ResidualErrorSuiteFeatureSummary:
+    reference_feature_key: str
+    comparison_count: int
+    reference_error_count: int
+    candidate_error_count: int
+    fixed_error_count: int
+    persistent_error_count: int
+    introduced_error_count: int
+    net_error_delta: int
+
+
+@dataclass(frozen=True)
+class ResidualErrorSuiteReport:
+    evaluation_strategy: EvaluationStrategy
+    task_name: str
+    method_name: BinaryMethodName
+    candidate_feature_key: str
+    reference_feature_keys: tuple[str, ...]
+    dataset_count: int
+    comparison_count: int
+    feature_summaries: tuple[ResidualErrorSuiteFeatureSummary, ...]
+    comparisons: tuple[DatasetResidualErrorComparison, ...]
+
+
 def _task_by_name(report: BinaryErrorAnalysisReport, task_name: str) -> BinaryTaskErrorAnalysis:
     matches = tuple(task for task in report.tasks if task.task_name == task_name)
     if len(matches) != 1:
@@ -229,6 +267,93 @@ def compare_binary_error_residuals(
     )
 
 
+def _ordered_unique(values: tuple[str, ...]) -> tuple[str, ...]:
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        if value not in seen:
+            ordered.append(value)
+            seen.add(value)
+    return tuple(ordered)
+
+
+def _validate_suite_inputs(inputs: tuple[ResidualErrorSuiteInput, ...]) -> None:
+    if len(inputs) == 0:
+        raise BinaryTaskError("At least one residual suite input is required.")
+    for index, suite_input in enumerate(inputs):
+        if suite_input.dataset_id == "":
+            raise BinaryTaskError(f"Residual suite input {index} has an empty dataset id.")
+
+
+def _feature_summary(
+    reference_feature_key: str,
+    comparisons: tuple[DatasetResidualErrorComparison, ...],
+) -> ResidualErrorSuiteFeatureSummary:
+    matching_comparisons = tuple(
+        item.comparison for item in comparisons if item.comparison.reference_feature_key == reference_feature_key
+    )
+    if len(matching_comparisons) == 0:
+        raise BinaryTaskError(f"Residual suite has no comparisons for reference feature '{reference_feature_key}'.")
+    fixed_error_count = sum(comparison.fixed_error_count for comparison in matching_comparisons)
+    introduced_error_count = sum(comparison.introduced_error_count for comparison in matching_comparisons)
+    return ResidualErrorSuiteFeatureSummary(
+        reference_feature_key=reference_feature_key,
+        comparison_count=len(matching_comparisons),
+        reference_error_count=sum(comparison.reference_error_count for comparison in matching_comparisons),
+        candidate_error_count=sum(comparison.candidate_error_count for comparison in matching_comparisons),
+        fixed_error_count=fixed_error_count,
+        persistent_error_count=sum(comparison.persistent_error_count for comparison in matching_comparisons),
+        introduced_error_count=introduced_error_count,
+        net_error_delta=introduced_error_count - fixed_error_count,
+    )
+
+
+def compare_binary_error_residual_suite(
+    inputs: tuple[ResidualErrorSuiteInput, ...],
+    task_name: str,
+    method_name: BinaryMethodName,
+) -> ResidualErrorSuiteReport:
+    _validate_suite_inputs(inputs)
+    comparisons = tuple(
+        DatasetResidualErrorComparison(
+            dataset_id=suite_input.dataset_id,
+            comparison=compare_binary_error_residuals(
+                reference_report=suite_input.reference_report,
+                candidate_report=suite_input.candidate_report,
+                task_name=task_name,
+                method_name=method_name,
+            ),
+        )
+        for suite_input in inputs
+    )
+    candidate_feature_keys = _ordered_unique(
+        tuple(item.comparison.candidate_feature_key for item in comparisons)
+    )
+    if len(candidate_feature_keys) != 1:
+        raise BinaryTaskError(
+            f"Residual suite requires one candidate feature, found: {', '.join(candidate_feature_keys)}."
+        )
+    comparison_keys = tuple(
+        (item.dataset_id, item.comparison.reference_feature_key, item.comparison.candidate_feature_key)
+        for item in comparisons
+    )
+    if len(set(comparison_keys)) != len(comparison_keys):
+        raise BinaryTaskError("Residual suite contains duplicate dataset/reference/candidate comparisons.")
+
+    reference_feature_keys = _ordered_unique(tuple(item.comparison.reference_feature_key for item in comparisons))
+    return ResidualErrorSuiteReport(
+        evaluation_strategy=comparisons[0].comparison.evaluation_strategy,
+        task_name=task_name,
+        method_name=method_name,
+        candidate_feature_key=candidate_feature_keys[0],
+        reference_feature_keys=reference_feature_keys,
+        dataset_count=len(set(item.dataset_id for item in comparisons)),
+        comparison_count=len(comparisons),
+        feature_summaries=tuple(_feature_summary(feature_key, comparisons) for feature_key in reference_feature_keys),
+        comparisons=comparisons,
+    )
+
+
 def _error_to_json(error: ResidualErrorExample) -> dict[str, JsonValue]:
     return {
         "example_id": error.example_id,
@@ -280,10 +405,51 @@ def residual_error_comparison_report_to_json(report: ResidualErrorComparisonRepo
     }
 
 
+def _suite_feature_summary_to_json(summary: ResidualErrorSuiteFeatureSummary) -> dict[str, JsonValue]:
+    return {
+        "reference_feature_key": summary.reference_feature_key,
+        "comparison_count": summary.comparison_count,
+        "reference_error_count": summary.reference_error_count,
+        "candidate_error_count": summary.candidate_error_count,
+        "fixed_error_count": summary.fixed_error_count,
+        "persistent_error_count": summary.persistent_error_count,
+        "introduced_error_count": summary.introduced_error_count,
+        "net_error_delta": summary.net_error_delta,
+    }
+
+
+def _suite_comparison_to_json(comparison: DatasetResidualErrorComparison) -> dict[str, JsonValue]:
+    return {
+        "dataset_id": comparison.dataset_id,
+        "comparison": residual_error_comparison_report_to_json(comparison.comparison),
+    }
+
+
+def residual_error_suite_report_to_json(report: ResidualErrorSuiteReport) -> dict[str, JsonValue]:
+    return {
+        "evaluation_strategy": report.evaluation_strategy,
+        "task_name": report.task_name,
+        "method_name": report.method_name,
+        "candidate_feature_key": report.candidate_feature_key,
+        "reference_feature_keys": list(report.reference_feature_keys),
+        "dataset_count": report.dataset_count,
+        "comparison_count": report.comparison_count,
+        "feature_summaries": [_suite_feature_summary_to_json(summary) for summary in report.feature_summaries],
+        "comparisons": [_suite_comparison_to_json(comparison) for comparison in report.comparisons],
+    }
+
+
 def write_residual_error_comparison_json(path: Path, report: ResidualErrorComparisonReport) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as file:
         json.dump(residual_error_comparison_report_to_json(report), file, indent=2)
+        file.write("\n")
+
+
+def write_residual_error_suite_json(path: Path, report: ResidualErrorSuiteReport) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as file:
+        json.dump(residual_error_suite_report_to_json(report), file, indent=2)
         file.write("\n")
 
 
@@ -367,6 +533,84 @@ def render_residual_error_comparison_markdown(report: ResidualErrorComparisonRep
     return "\n".join(lines)
 
 
+def render_residual_error_suite_markdown(report: ResidualErrorSuiteReport) -> str:
+    lines = [
+        "# Residual Error Suite",
+        "",
+        "## Source",
+        "",
+        f"- Evaluation strategy: `{report.evaluation_strategy}`",
+        f"- Task: `{report.task_name}`",
+        f"- Method: `{report.method_name}`",
+        f"- Candidate feature: `{report.candidate_feature_key}`",
+        f"- Dataset count: `{report.dataset_count}`",
+        f"- Comparison count: `{report.comparison_count}`",
+        "",
+        "## Aggregate by Reference Feature",
+        "",
+        "| Reference Feature | Comparisons | Reference Errors | Candidate Errors | Fixed | Persistent | Introduced | Net Error Delta |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|",
+    ]
+    for summary in report.feature_summaries:
+        lines.append(
+            f"| `{summary.reference_feature_key}` | {summary.comparison_count} | "
+            f"{summary.reference_error_count} | {summary.candidate_error_count} | "
+            f"{summary.fixed_error_count} | {summary.persistent_error_count} | "
+            f"{summary.introduced_error_count} | {summary.net_error_delta} |"
+        )
+
+    lines.extend(
+        [
+            "",
+            "## Comparisons",
+            "",
+            "| Dataset | Reference Feature | Reference Errors | Candidate Errors | Fixed | Persistent | Introduced | Reference Accuracy | Candidate Accuracy |",
+            "|---|---|---:|---:|---:|---:|---:|---:|---:|",
+        ]
+    )
+    for item in report.comparisons:
+        comparison = item.comparison
+        lines.append(
+            f"| `{item.dataset_id}` | `{comparison.reference_feature_key}` | "
+            f"{comparison.reference_error_count} | {comparison.candidate_error_count} | "
+            f"{comparison.fixed_error_count} | {comparison.persistent_error_count} | "
+            f"{comparison.introduced_error_count} | {comparison.reference_accuracy:.4f} | "
+            f"{comparison.candidate_accuracy:.4f} |"
+        )
+
+    lines.extend(["", "## Family Deltas", ""])
+    for item in report.comparisons:
+        comparison = item.comparison
+        lines.extend(
+            [
+                f"### {item.dataset_id} / {comparison.reference_feature_key}",
+                "",
+            ]
+        )
+        if len(comparison.family_summaries) == 0:
+            lines.extend(["No residual error changes.", ""])
+            continue
+        lines.extend(
+            [
+                "| Family | Fixed | Persistent | Introduced |",
+                "|---|---:|---:|---:|",
+            ]
+        )
+        for summary in comparison.family_summaries:
+            lines.append(
+                f"| `{summary.family}` | {summary.fixed_error_count} | "
+                f"{summary.persistent_error_count} | {summary.introduced_error_count} |"
+            )
+        lines.append("")
+
+    return "\n".join(lines)
+
+
 def write_residual_error_comparison_markdown(path: Path, report: ResidualErrorComparisonReport) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(render_residual_error_comparison_markdown(report), encoding="utf-8")
+
+
+def write_residual_error_suite_markdown(path: Path, report: ResidualErrorSuiteReport) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(render_residual_error_suite_markdown(report), encoding="utf-8")

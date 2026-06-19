@@ -163,7 +163,7 @@ def _concat_feature_tensor(
     return torch.cat(tensors, dim=1)
 
 
-def _activation_feature_tensor(
+def activation_feature_tensor(
     artifact: ActivationArtifact,
     feature_key: str,
 ) -> torch.Tensor:
@@ -457,7 +457,7 @@ def evaluate_activation_method(
     dataset: BinaryTaskDataset,
     config: BinaryTaskConfig,
 ) -> BinaryMethodReport:
-    feature_tensor = _activation_feature_tensor(artifact, config.activation_feature_key)
+    feature_tensor = activation_feature_tensor(artifact, config.activation_feature_key)
     selected_indices = tuple(artifact["example_ids"].index(example_id) for example_id in dataset.example_ids)
     matrix = tensor_to_float_matrix(feature_tensor)[list(selected_indices)]
     label_encoding = encode_labels(dataset.target_labels)
@@ -485,7 +485,7 @@ def evaluate_grouped_activation_method(
     dataset: BinaryTaskDataset,
     config: BinaryTaskConfig,
 ) -> BinaryMethodReport:
-    feature_tensor = _activation_feature_tensor(artifact, config.activation_feature_key)
+    feature_tensor = activation_feature_tensor(artifact, config.activation_feature_key)
     selected_indices = tuple(artifact["example_ids"].index(example_id) for example_id in dataset.example_ids)
     matrix = tensor_to_float_matrix(feature_tensor)[list(selected_indices)]
     label_encoding = encode_labels(dataset.target_labels)

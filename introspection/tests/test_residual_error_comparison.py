@@ -12,10 +12,15 @@ from aegis_introspection.error_analysis import (
     BinaryTaskErrorAnalysis,
 )
 from aegis_introspection.residual_error_comparison import (
+    ResidualErrorSuiteInput,
     compare_binary_error_residuals,
+    compare_binary_error_residual_suite,
     render_residual_error_comparison_markdown,
+    render_residual_error_suite_markdown,
     write_residual_error_comparison_json,
     write_residual_error_comparison_markdown,
+    write_residual_error_suite_json,
+    write_residual_error_suite_markdown,
 )
 
 
@@ -207,6 +212,136 @@ class ResidualErrorComparisonTest(unittest.TestCase):
         self.assertEqual(1, decoded["fixed_error_count"])
         self.assertEqual(1, decoded["introduced_error_count"])
         self.assertIn("Residual Error Comparison", markdown)
+
+    def test_compare_binary_error_residual_suite_aggregates_reference_feature_deltas(self) -> None:
+        candidate_report = _report(
+            feature_name="concat(final_token_layer_11,final_token_layer_16)",
+            predictions=(
+                _prediction("example_001", "family_a", "secret_present_safe", "secret_present_safe"),
+                _prediction("example_002", "family_b", "exfiltration_intent", "secret_present_safe"),
+                _prediction("example_003", "family_c", "secret_present_safe", "exfiltration_intent"),
+                _prediction("example_004", "family_d", "exfiltration_intent", "exfiltration_intent"),
+            ),
+        )
+        reference_report = _report(
+            feature_name="mean_pool_layer_18",
+            predictions=(
+                _prediction("example_001", "family_a", "secret_present_safe", "exfiltration_intent"),
+                _prediction("example_002", "family_b", "exfiltration_intent", "secret_present_safe"),
+                _prediction("example_003", "family_c", "secret_present_safe", "secret_present_safe"),
+                _prediction("example_004", "family_d", "exfiltration_intent", "exfiltration_intent"),
+            ),
+        )
+        single_layer_report = _report(
+            feature_name="final_token_layer_16",
+            predictions=(
+                _prediction("example_001", "family_a", "secret_present_safe", "secret_present_safe"),
+                _prediction("example_002", "family_b", "exfiltration_intent", "secret_present_safe"),
+                _prediction("example_003", "family_c", "secret_present_safe", "secret_present_safe"),
+                _prediction("example_004", "family_d", "exfiltration_intent", "exfiltration_intent"),
+            ),
+        )
+
+        report = compare_binary_error_residual_suite(
+            inputs=(
+                ResidualErrorSuiteInput(
+                    dataset_id="baseline",
+                    reference_report=reference_report,
+                    candidate_report=candidate_report,
+                ),
+                ResidualErrorSuiteInput(
+                    dataset_id="baseline",
+                    reference_report=single_layer_report,
+                    candidate_report=candidate_report,
+                ),
+            ),
+            task_name="safe_secret_vs_exfiltration",
+            method_name="activation_probe",
+        )
+
+        self.assertEqual("concat(final_token_layer_11,final_token_layer_16)", report.candidate_feature_key)
+        self.assertEqual(("mean_pool_layer_18", "final_token_layer_16"), report.reference_feature_keys)
+        self.assertEqual(1, report.dataset_count)
+        self.assertEqual(2, report.comparison_count)
+        summaries = {summary.reference_feature_key: summary for summary in report.feature_summaries}
+        self.assertEqual(1, summaries["mean_pool_layer_18"].fixed_error_count)
+        self.assertEqual(1, summaries["mean_pool_layer_18"].introduced_error_count)
+        self.assertEqual(0, summaries["mean_pool_layer_18"].net_error_delta)
+        self.assertEqual(1, summaries["final_token_layer_16"].net_error_delta)
+
+    def test_render_residual_error_suite_markdown_includes_aggregate_and_comparison_tables(self) -> None:
+        candidate_report = _report(
+            feature_name="concat(final_token_layer_11,final_token_layer_16)",
+            predictions=(
+                _prediction("example_001", "family_a", "secret_present_safe", "secret_present_safe"),
+                _prediction("example_002", "family_b", "exfiltration_intent", "secret_present_safe"),
+            ),
+        )
+        reference_report = _report(
+            feature_name="mean_pool_layer_18",
+            predictions=(
+                _prediction("example_001", "family_a", "secret_present_safe", "exfiltration_intent"),
+                _prediction("example_002", "family_b", "exfiltration_intent", "exfiltration_intent"),
+            ),
+        )
+        report = compare_binary_error_residual_suite(
+            inputs=(
+                ResidualErrorSuiteInput(
+                    dataset_id="baseline",
+                    reference_report=reference_report,
+                    candidate_report=candidate_report,
+                ),
+            ),
+            task_name="safe_secret_vs_exfiltration",
+            method_name="activation_probe",
+        )
+
+        markdown = render_residual_error_suite_markdown(report)
+
+        self.assertIn("# Residual Error Suite", markdown)
+        self.assertIn("Candidate feature: `concat(final_token_layer_11,final_token_layer_16)`", markdown)
+        self.assertIn("| Reference Feature | Comparisons | Reference Errors |", markdown)
+        self.assertIn("| Dataset | Reference Feature | Reference Errors |", markdown)
+
+    def test_write_residual_error_suite_outputs_creates_files(self) -> None:
+        candidate_report = _report(
+            feature_name="concat(final_token_layer_11,final_token_layer_16)",
+            predictions=(
+                _prediction("example_001", "family_a", "secret_present_safe", "secret_present_safe"),
+                _prediction("example_002", "family_b", "exfiltration_intent", "secret_present_safe"),
+            ),
+        )
+        reference_report = _report(
+            feature_name="mean_pool_layer_18",
+            predictions=(
+                _prediction("example_001", "family_a", "secret_present_safe", "exfiltration_intent"),
+                _prediction("example_002", "family_b", "exfiltration_intent", "exfiltration_intent"),
+            ),
+        )
+        report = compare_binary_error_residual_suite(
+            inputs=(
+                ResidualErrorSuiteInput(
+                    dataset_id="baseline",
+                    reference_report=reference_report,
+                    candidate_report=candidate_report,
+                ),
+            ),
+            task_name="safe_secret_vs_exfiltration",
+            method_name="activation_probe",
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            json_path = Path(temp_dir) / "suite.json"
+            markdown_path = Path(temp_dir) / "suite.md"
+            write_residual_error_suite_json(json_path, report)
+            write_residual_error_suite_markdown(markdown_path, report)
+
+            decoded = json.loads(json_path.read_text(encoding="utf-8"))
+            markdown = markdown_path.read_text(encoding="utf-8")
+
+        self.assertEqual("concat(final_token_layer_11,final_token_layer_16)", decoded["candidate_feature_key"])
+        self.assertEqual(1, decoded["comparison_count"])
+        self.assertIn("Residual Error Suite", markdown)
 
 
 if __name__ == "__main__":

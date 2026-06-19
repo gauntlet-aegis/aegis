@@ -92,6 +92,8 @@ def _synthetic_artifact() -> ActivationArtifact:
         "tags": tuple(("synthetic",) for _ in range(12)),
         "features": {
             "mean_pool_layer_18": feature,
+            "final_token_layer_11": feature[:, :1],
+            "final_token_layer_16": feature[:, 1:],
         },
     }
 
@@ -123,6 +125,25 @@ class ErrorAnalysisTest(unittest.TestCase):
             self.assertEqual(8, len(method.predictions))
             self.assertEqual(8, len({prediction.example_id for prediction in method.predictions}))
             self.assertEqual({1, 2}, {prediction.fold_index for prediction in method.predictions})
+
+    def test_evaluate_grouped_error_analysis_accepts_concatenated_activation_feature(self) -> None:
+        config = BinaryTaskConfig(
+            fold_count=2,
+            random_seed=7,
+            max_iter=1000,
+            regularization_c=1.0,
+            activation_feature_key="concat(final_token_layer_11,final_token_layer_16)",
+            word_ngram_range=(1, 2),
+            char_ngram_range=(3, 5),
+        )
+
+        report = evaluate_grouped_binary_error_analysis(_synthetic_artifact(), config)
+
+        self.assertEqual("concat(final_token_layer_11,final_token_layer_16)", report.activation_feature_key)
+        safe_task = next(task for task in report.tasks if task.task_name == "safe_secret_vs_exfiltration")
+        activation_method = next(method for method in safe_task.methods if method.method_name == "activation_probe")
+        self.assertEqual("concat(final_token_layer_11,final_token_layer_16)", activation_method.feature_name)
+        self.assertEqual(8, activation_method.prediction_count)
 
     def test_summarize_family_predictions_counts_errors_by_family_and_label(self) -> None:
         predictions = (

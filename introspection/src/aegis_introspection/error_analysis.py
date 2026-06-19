@@ -13,6 +13,7 @@ from aegis_introspection.binary_tasks import (
     BinaryTaskDataset,
     BinaryTaskError,
     EvaluationStrategy,
+    activation_feature_tensor,
     build_activation_classifier,
     build_text_classifier,
     build_binary_task_dataset,
@@ -184,10 +185,7 @@ def collect_grouped_activation_predictions(
     dataset: BinaryTaskDataset,
     config: BinaryTaskConfig,
 ) -> BinaryMethodErrorAnalysis:
-    feature_tensor = artifact["features"].get(config.activation_feature_key)
-    if feature_tensor is None:
-        raise BinaryTaskError(f"Activation feature '{config.activation_feature_key}' is not present in the artifact.")
-
+    feature_tensor = activation_feature_tensor(artifact, config.activation_feature_key)
     matrix = tensor_to_float_matrix(feature_tensor)[list(_selected_artifact_indices(artifact, dataset))]
     label_encoding = encode_labels(dataset.target_labels)
     encoded_labels = label_encoding.encoded_labels

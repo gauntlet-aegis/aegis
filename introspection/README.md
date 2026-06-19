@@ -112,6 +112,15 @@ local winner there, while the combined feature falls back to roughly
 `final_token_layer_11` performance. Treat the combined feature as the leading
 candidate for the next residual-analysis pass, not as a replacement checkpoint.
 
+The combined-feature residual suite compares that candidate against
+`mean_pool_layer_18`, `final_token_layer_11`, and `final_token_layer_16` across
+all four checkpoints. The combined feature reduces aggregate target-task errors
+against all three references: -21 versus the historical reference, -4 versus
+`final_token_layer_11`, and -6 versus `final_token_layer_16`. The caution remains
+Hard V3, where `final_token_layer_16` has 4 errors and the combined feature has
+7. The combined feature is now the leading promotion candidate, but the Hard V3
+introduced-error families should be reviewed before changing the checkpoint.
+
 ## Project Layout
 
 ```text
@@ -311,6 +320,13 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/sheep/Desktop/Gauntlet/Capstone/intr
   /Users/sheep/Desktop/Gauntlet/Capstone/.venv-introspection/bin/python introspection/scripts/compare_feature_stability.py
 ```
 
+Run the combined feature residual suite:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/sheep/Desktop/Gauntlet/Capstone/introspection/src \
+  /Users/sheep/Desktop/Gauntlet/Capstone/.venv-introspection/bin/python introspection/scripts/compare_combined_residual_suite.py
+```
+
 ## Reports
 
 Key human-readable checkpoints:
@@ -352,6 +368,8 @@ Key human-readable checkpoints:
 - `data/reports/feature_stability_progress_2026-06-19.md`
 - `data/reports/feature_stability_combined_l11_l16_summary.md`
 - `data/reports/feature_stability_combined_progress_2026-06-19.md`
+- `data/reports/combined_feature_residual_suite_summary.md`
+- `data/reports/combined_feature_residual_progress_2026-06-19.md`
 
 Key machine-readable reports registered in lineage:
 
@@ -381,19 +399,21 @@ Key machine-readable reports registered in lineage:
 - `data/reports/hard_v3_candidate_error_adjudication.json`
 - `data/reports/feature_stability_reference_l11_l16.json`
 - `data/reports/feature_stability_combined_l11_l16.json`
+- `data/reports/combined_feature_residual_suite.json`
 
 ## Next Moves
 
-The next experimental step is residual analysis for the combined feature, then
-an explicit feature-selection rule. Do not silently promote the combined feature
-just because it improves average performance.
+The next experimental step is human review of the combined-feature residuals,
+then an explicit feature-selection rule. Do not silently promote the combined
+feature just because it improves aggregate performance.
 
 Recommended sequence:
 
 1. Human-review the Hard V3 candidate errors, especially the introduced safe
    examples classified as exfiltration.
-2. Run residual analysis for `concat(final_token_layer_11,final_token_layer_16)`
-   against the fixed reference and the two single-layer candidates.
+2. Review the Hard V3 families where
+   `concat(final_token_layer_11,final_token_layer_16)` introduces errors against
+   `final_token_layer_16`.
 3. Keep `mean_pool_layer_18` as the fixed regression checkpoint while
    final-token candidates remain under evaluation.
 4. Define a promotion rule that weighs average performance, worst-case
