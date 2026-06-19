@@ -7,6 +7,93 @@ can help distinguish safe secret handling from exfiltration-oriented behavior.
 The work here is exploratory. The current results are useful checkpoints, not
 validated production claims.
 
+## System Alignment
+
+The current work is the CIFT-like portion of the broader Aegis/AIS design. The
+larger system should be treated as a multi-monitor gateway:
+
+| Component | Role | Current Status |
+|---|---|---|
+| DP-HONEY | Inject format-matched honeytokens before model access. | Not implemented here yet. |
+| CIFT-like activation monitor | Read hidden-state features before output generation. | Current focus. |
+| Text leakage detector | Scan generated text for canary or secret leakage. | Not implemented here yet. |
+| NIMBUS-like accumulator | Track cumulative leakage risk over a conversation. | Not implemented here yet. |
+
+The activation probe is therefore a monitor signal, not the whole defense. It
+should eventually emit structured evidence that a gateway policy engine can
+combine with honeytoken evidence, post-output leakage scans, and cumulative
+conversation risk.
+
+The paper-specific CIFT target is narrower than generic activation probing:
+monitor readout positions that occur after both secret context and the current
+query or payload, rather than hidden states at static credential positions. The
+paper also frames CIFT as a calibrated deviation signal over the last quarter of
+transformer layers, followed by learned nonnegative layer weighting. The current
+Aegis work approximates that direction with final-token/readout-style features
+and grouped probe evaluation, but it has not yet implemented the paper's full
+benign-calibrated CCI/CFS scoring path.
+
+That distinction matters for planning:
+
+| Question | Current Work | Paper-Aligned Target |
+|---|---|---|
+| Readout position | Final prompt token features. | Positions after secret context and query/payload; final prompt token plus pre-generation decision positions. |
+| Layer handling | Individual and concatenated feature candidates. | Last-quarter layer hooks with calibrated per-layer deviation and learned layer weights. |
+| Calibration | Grouped CV, residual analysis, human adjudication. | Benign calibration distribution, conformal/text thresholds, and deployment operating points. |
+| System role | Candidate CIFT monitor signal. | One component in AIS per-turn pipeline before generation, combined with canary/text detection and NIMBUS. |
+
+## Operating Workflow
+
+Every experiment should answer these questions before it is promoted:
+
+1. Which system component does this advance?
+2. What runtime signal would this component emit?
+3. What dataset or artifact proves the result without replacing prior evidence?
+4. What grouped, held-out, or residual check protects against post-hoc overfit?
+5. What failure cases need human review?
+6. How does the result affect the eventual gateway decision pipeline?
+
+For the current CIFT-like thread, use this workflow:
+
+| Stage | Required Output |
+|---|---|
+| Scope | State whether the work is CIFT, DP-HONEY, text detection, NIMBUS, or integration. |
+| Dataset | Add or reuse a registered prompt dataset with clear label and family semantics. |
+| Extraction | Produce activation artifacts without overwriting prior checkpoints. |
+| Evaluation | Run grouped evaluation first for credible claims. |
+| Crosscheck | Compare against fixed references and newer candidates across checkpoints. |
+| Residual analysis | Track fixed, persistent, and introduced errors by family. |
+| Adjudication | Create human-review worksheets for promotion-sensitive regressions. |
+| Paper alignment | State whether the result is an approximation or implements the paper method directly. |
+| Promotion | Define an explicit rule before changing the active checkpoint or monitor contract. |
+| Integration | Express the result as a monitor event suitable for gateway policy composition. |
+
+The target monitor event shape is:
+
+```json
+{
+  "monitor": "activation_probe",
+  "component": "cift_like",
+  "feature_key": "concat(final_token_layer_11,final_token_layer_16)",
+  "task": "safe_secret_vs_exfiltration",
+  "risk_score": 0.0,
+  "decision": "allow|flag|block",
+  "model_id": "Qwen/Qwen3-0.6B",
+  "probe_version": "unpromoted",
+  "evidence": {
+    "evaluation_strategy": "stratified_group_kfold",
+    "dataset_checkpoint": "hard_prompts_v3"
+  }
+}
+```
+
+Do not promote a feature solely because it improves one metric. Promotion should
+balance aggregate performance, worst-checkpoint behavior, introduced-error
+severity, human adjudication, and integration value for the full gateway.
+For CIFT specifically, promotion should also state whether the candidate is a
+temporary empirical probe or the first implementation of the paper-aligned
+readout-position, calibrated-deviation monitor.
+
 ## Current State
 
 Four datasets are currently registered in `data/lineage.json`:
@@ -382,6 +469,7 @@ Key human-readable checkpoints:
 - `data/reports/combined_feature_residual_suite_summary.md`
 - `data/reports/combined_feature_residual_progress_2026-06-19.md`
 - `data/reports/hard_v3_combined_regression_adjudication_summary.md`
+- `data/reports/project_aligned_workflow_2026-06-19.md`
 
 Key machine-readable reports registered in lineage:
 
