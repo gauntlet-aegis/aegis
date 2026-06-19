@@ -169,6 +169,14 @@
       "dataset_id": "hard_prompts_v2",
       "artifact_id": "qwen3_0_6b_hard_v2_all_layers_v1",
       "evaluation_strategy": "stratified_group_kfold"
+    },
+    {
+      "id": "hard_v2_binary_layer_sweep_grouped_v1",
+      "path": "introspection/data/reports/binary_layer_sweep_hard_v2_grouped.json",
+      "sha256": "ba82d48593f84c2fd8409e65d079981dd6254006fb9e9b7f9d9fb893851105f0",
+      "dataset_id": "hard_prompts_v2",
+      "artifact_id": "qwen3_0_6b_hard_v2_all_layers_v1",
+      "evaluation_strategy": "stratified_group_kfold"
     }
   ]
 }
