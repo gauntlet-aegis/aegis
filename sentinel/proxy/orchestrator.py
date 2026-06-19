@@ -46,6 +46,7 @@ class Orchestrator:
         self.host = host
         self.store = store or ConversationStore()
         d = detectors or {}
+        self._honey_generator = d.get("honey_generator")
         self.pipeline = build_pipeline(
             settings.mode,
             self.store,
@@ -59,7 +60,10 @@ class Orchestrator:
     def _ledger_for(self, conversation_id: str) -> HoneytokenLedger:
         st = self.store.get(conversation_id)
         if st.ledger is None:
-            st.ledger = HoneytokenLedger(conversation_id)
+            if self._honey_generator is not None:
+                st.ledger = HoneytokenLedger(conversation_id, generator=self._honey_generator)
+            else:
+                st.ledger = HoneytokenLedger(conversation_id)
         return st.ledger
 
     def handle(

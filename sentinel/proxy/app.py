@@ -31,11 +31,14 @@ def create_app(settings: Settings | None = None, detectors: dict | None = None) 
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        from sentinel.proxy.bootstrap import build_detectors
+
         host = make_host(settings)
+        det = detectors if detectors is not None else build_detectors(settings)
         app.state.settings = settings
         app.state.bus = EventBus()
         app.state.bus.add_sink(JSONLSink(settings.event_dir))
-        app.state.orch = Orchestrator(settings, host, detectors=detectors)
+        app.state.orch = Orchestrator(settings, host, detectors=det)
         yield
 
     app = FastAPI(title="Sentinel", lifespan=lifespan)
