@@ -527,6 +527,27 @@ better readout positions or source-family interaction features so useful
 mean-pool evidence can be retained without the current Hard V2 false positives
 and false negatives.
 
+A first source-family interaction checkpoint tested that next branch without
+changing the source heads, source set, or `meta_c_10` operating point. It adds
+coarse family features on top of the raw full dual-readout source scores:
+final-token mean, mean-pool mean, and optionally their signed and absolute
+mean gap. The raw source-score vector remains the best Hard V2/Hard V3 result:
+
+| Interaction Rule | Candidate Errors | Fixed | Persistent | Introduced | Net Error Delta | Mean Accuracy |
+|---|---:|---:|---:|---:|---:|---:|
+| Raw scores | 9 | 5 | 4 | 5 | 0 | 0.9250 |
+| Family means | 10 | 5 | 4 | 6 | 1 | 0.9167 |
+| Family mean gaps | 15 | 5 | 4 | 11 | 6 | 0.8750 |
+
+The result argues against coarse family aggregation as the immediate fix.
+Adding family means leaves Hard V3 unchanged but worsens Hard V2 by one
+introduced error; adding mean-gap features worsens both aggregate behavior and
+the Hard V2 pressure test. The raw per-layer score vector appears to preserve
+useful detail that these compressed family summaries disturb. The next CIFT-like
+branch should move toward richer readout positions, better source-head targets,
+or paper-aligned CCI/CFS scoring rather than adding more hand-built aggregate
+features to the current score vector.
+
 ## Project Layout
 
 ```text
@@ -824,6 +845,13 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/sheep/Desktop/Gauntlet/Capstone/intr
   /Users/sheep/Desktop/Gauntlet/Capstone/.venv-introspection/bin/python introspection/scripts/compare_cift_meta_readout_family.py
 ```
 
+Run CIFT meta-head source-family interaction comparisons:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/sheep/Desktop/Gauntlet/Capstone/introspection/src \
+  /Users/sheep/Desktop/Gauntlet/Capstone/.venv-introspection/bin/python introspection/scripts/compare_cift_meta_family_interactions.py
+```
+
 Build the Hard V3 combined-regression adjudication worksheet:
 
 ```bash
@@ -900,6 +928,7 @@ Key human-readable checkpoints:
 - `data/reports/cift_meta_regularization_diagnostics_hard_v2_meta_c_10_v1_summary.md`
 - `data/reports/cift_meta_score_calibration_v1_summary.md`
 - `data/reports/cift_meta_readout_family_v1_summary.md`
+- `data/reports/cift_meta_family_interactions_v1_summary.md`
 
 Key machine-readable reports registered in lineage:
 
@@ -948,6 +977,7 @@ Key machine-readable reports registered in lineage:
 - `data/reports/cift_meta_regularization_diagnostics_hard_v2_meta_c_10_v1.json`
 - `data/reports/cift_meta_score_calibration_v1.json`
 - `data/reports/cift_meta_readout_family_v1.json`
+- `data/reports/cift_meta_family_interactions_v1.json`
 
 ## Next Moves
 
@@ -966,10 +996,10 @@ Recommended sequence:
    final-token candidates remain under evaluation.
 4. Define a promotion rule that weighs average performance, worst-case
    checkpoint performance, and post-hoc discovery risk.
-5. For CIFT-like work, treat `meta_c_10` full dual-readout as the current
-   regularized diagnostic target, then test source-family interaction features
-   or decision-position readouts against its Hard V2 residuals before any
-   promotion decision.
+5. For CIFT-like work, treat `meta_c_10` raw full dual-readout as the current
+   regularized diagnostic target, then test decision-position readouts,
+   source-head targets, or paper-aligned CCI/CFS scoring against its Hard V2
+   residuals before any promotion decision.
 6. Keep registering every dataset, artifact, and machine-readable report in
    `data/lineage.json`.
 
