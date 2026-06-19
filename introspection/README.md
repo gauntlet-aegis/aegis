@@ -109,8 +109,7 @@ The combined-feature check adds
 matrix. It ranks first by mean macro F1 at 0.9151 and wins or ties three of four
 checkpoints. The important caveat is Hard V3: `final_token_layer_16` remains the
 local winner there, while the combined feature falls back to roughly
-`final_token_layer_11` performance. Treat the combined feature as the leading
-candidate for the next residual-analysis pass, not as a replacement checkpoint.
+`final_token_layer_11` performance.
 
 The combined-feature residual suite compares that candidate against
 `mean_pool_layer_18`, `final_token_layer_11`, and `final_token_layer_16` across
@@ -120,6 +119,11 @@ against all three references: -21 versus the historical reference, -4 versus
 Hard V3, where `final_token_layer_16` has 4 errors and the combined feature has
 7. The combined feature is now the leading promotion candidate, but the Hard V3
 introduced-error families should be reviewed before changing the checkpoint.
+
+The Hard V3 combined-regression adjudication worksheet narrows that review to 3
+introduced cases against `final_token_layer_16`: one exfiltration case the
+combined feature misses as safe, and two safe cases the combined feature marks
+as exfiltration. All three are pending human review.
 
 ## Project Layout
 
@@ -327,6 +331,13 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/sheep/Desktop/Gauntlet/Capstone/intr
   /Users/sheep/Desktop/Gauntlet/Capstone/.venv-introspection/bin/python introspection/scripts/compare_combined_residual_suite.py
 ```
 
+Build the Hard V3 combined-regression adjudication worksheet:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/sheep/Desktop/Gauntlet/Capstone/introspection/src \
+  /Users/sheep/Desktop/Gauntlet/Capstone/.venv-introspection/bin/python introspection/scripts/adjudicate_combined_hard_v3_regressions.py
+```
+
 ## Reports
 
 Key human-readable checkpoints:
@@ -370,6 +381,7 @@ Key human-readable checkpoints:
 - `data/reports/feature_stability_combined_progress_2026-06-19.md`
 - `data/reports/combined_feature_residual_suite_summary.md`
 - `data/reports/combined_feature_residual_progress_2026-06-19.md`
+- `data/reports/hard_v3_combined_regression_adjudication_summary.md`
 
 Key machine-readable reports registered in lineage:
 
@@ -400,20 +412,20 @@ Key machine-readable reports registered in lineage:
 - `data/reports/feature_stability_reference_l11_l16.json`
 - `data/reports/feature_stability_combined_l11_l16.json`
 - `data/reports/combined_feature_residual_suite.json`
+- `data/reports/hard_v3_combined_regression_adjudication.json`
 
 ## Next Moves
 
-The next experimental step is human review of the combined-feature residuals,
-then an explicit feature-selection rule. Do not silently promote the combined
-feature just because it improves aggregate performance.
+The next experimental step is completing human review of the three Hard V3
+combined-regression adjudication cases, then an explicit feature-selection rule.
+Do not silently promote the combined feature just because it improves aggregate
+performance.
 
 Recommended sequence:
 
-1. Human-review the Hard V3 candidate errors, especially the introduced safe
-   examples classified as exfiltration.
-2. Review the Hard V3 families where
-   `concat(final_token_layer_11,final_token_layer_16)` introduces errors against
-   `final_token_layer_16`.
+1. Human-review the three Hard V3 combined-regression cases.
+2. Decide whether each case is a true model regression, a defensible tradeoff,
+   or a dataset/label ambiguity.
 3. Keep `mean_pool_layer_18` as the fixed regression checkpoint while
    final-token candidates remain under evaluation.
 4. Define a promotion rule that weighs average performance, worst-case

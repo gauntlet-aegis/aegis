@@ -15,6 +15,7 @@ from aegis_introspection.error_analysis import (
 )
 from aegis_introspection.probe import JsonValue
 from aegis_introspection.prompts import PromptExample
+from aegis_introspection.residual_error_comparison import ResidualErrorComparisonReport, ResidualErrorExample
 
 
 AdjudicationStatus: TypeAlias = str
@@ -24,6 +25,11 @@ _REVIEW_QUESTIONS: tuple[str, ...] = (
     "Would a careful reviewer keep the current label?",
     "Is the contrast fair, or did prompt wording make the target label ambiguous?",
     "Does this case represent a real model weakness rather than a dataset artifact?",
+)
+_RESIDUAL_REVIEW_QUESTIONS: tuple[str, ...] = (
+    "Is this introduced error a real regression relative to the reference feature?",
+    "Would a careful reviewer keep the current label?",
+    "Does this case reveal a family-level weakness that should block feature promotion?",
 )
 
 
@@ -70,6 +76,39 @@ class AdjudicationReport:
     case_count: int
     family_summaries: tuple[FamilyAdjudicationSummary, ...]
     cases: tuple[AdjudicationCase, ...]
+
+
+@dataclass(frozen=True)
+class ResidualAdjudicationCase:
+    reference_fold_index: int
+    candidate_fold_index: int
+    example_id: str
+    family: str
+    source_label: str
+    true_label: str
+    reference_predicted_label: str
+    candidate_predicted_label: str
+    prompt_text: str
+    adjudication_status: AdjudicationStatus
+    review_questions: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class ResidualAdjudicationReport:
+    source_model_id: str
+    source_revision: str
+    source_selected_device: str
+    evaluation_strategy: str
+    task_name: str
+    method_name: BinaryMethodName
+    reference_feature_key: str
+    candidate_feature_key: str
+    reference_error_count: int
+    candidate_error_count: int
+    introduced_error_count: int
+    case_count: int
+    family_summaries: tuple[FamilyAdjudicationSummary, ...]
+    cases: tuple[ResidualAdjudicationCase, ...]
 
 
 def _task_by_name(report: BinaryErrorAnalysisReport, task_name: str) -> BinaryTaskErrorAnalysis:
@@ -133,7 +172,9 @@ def _context_predictions(
     return tuple(rows)
 
 
-def _family_summaries(cases: tuple[AdjudicationCase, ...]) -> tuple[FamilyAdjudicationSummary, ...]:
+def _family_summaries(
+    cases: tuple[AdjudicationCase | ResidualAdjudicationCase, ...],
+) -> tuple[FamilyAdjudicationSummary, ...]:
     family_counts: dict[str, int] = {}
     for case in cases:
         family_counts[case.family] = family_counts.get(case.family, 0) + 1
@@ -189,6 +230,56 @@ def build_adjudication_report(
         task_name=task.task_name,
         subject_method_name=subject_method.method_name,
         activation_feature_key=error_report.activation_feature_key,
+        case_count=len(sorted_cases),
+        family_summaries=_family_summaries(sorted_cases),
+        cases=sorted_cases,
+    )
+
+
+def _residual_adjudication_case(
+    residual_error: ResidualErrorExample,
+    example: PromptExample,
+) -> ResidualAdjudicationCase:
+    return ResidualAdjudicationCase(
+        reference_fold_index=residual_error.reference_fold_index,
+        candidate_fold_index=residual_error.candidate_fold_index,
+        example_id=residual_error.example_id,
+        family=residual_error.family,
+        source_label=residual_error.source_label,
+        true_label=residual_error.true_label,
+        reference_predicted_label=residual_error.reference_predicted_label,
+        candidate_predicted_label=residual_error.candidate_predicted_label,
+        prompt_text=example.text,
+        adjudication_status=_PENDING_HUMAN_REVIEW,
+        review_questions=_RESIDUAL_REVIEW_QUESTIONS,
+    )
+
+
+def build_residual_adjudication_report(
+    residual_report: ResidualErrorComparisonReport,
+    examples: tuple[PromptExample, ...],
+) -> ResidualAdjudicationReport:
+    prompts_by_id = _examples_by_id(examples)
+    cases: list[ResidualAdjudicationCase] = []
+    for residual_error in residual_report.introduced_errors:
+        example = prompts_by_id.get(residual_error.example_id)
+        if example is None:
+            raise AdjudicationError(f"Missing prompt text for example '{residual_error.example_id}'.")
+        cases.append(_residual_adjudication_case(residual_error, example))
+
+    sorted_cases = tuple(sorted(cases, key=lambda item: (item.family, item.example_id)))
+    return ResidualAdjudicationReport(
+        source_model_id=residual_report.source_model_id,
+        source_revision=residual_report.source_revision,
+        source_selected_device=residual_report.source_selected_device,
+        evaluation_strategy=residual_report.evaluation_strategy,
+        task_name=residual_report.task_name,
+        method_name=residual_report.method_name,
+        reference_feature_key=residual_report.reference_feature_key,
+        candidate_feature_key=residual_report.candidate_feature_key,
+        reference_error_count=residual_report.reference_error_count,
+        candidate_error_count=residual_report.candidate_error_count,
+        introduced_error_count=residual_report.introduced_error_count,
         case_count=len(sorted_cases),
         family_summaries=_family_summaries(sorted_cases),
         cases=sorted_cases,
@@ -368,6 +459,22 @@ def _case_to_json(case: AdjudicationCase) -> dict[str, JsonValue]:
     }
 
 
+def _residual_case_to_json(case: ResidualAdjudicationCase) -> dict[str, JsonValue]:
+    return {
+        "reference_fold_index": case.reference_fold_index,
+        "candidate_fold_index": case.candidate_fold_index,
+        "example_id": case.example_id,
+        "family": case.family,
+        "source_label": case.source_label,
+        "true_label": case.true_label,
+        "reference_predicted_label": case.reference_predicted_label,
+        "candidate_predicted_label": case.candidate_predicted_label,
+        "prompt_text": case.prompt_text,
+        "adjudication_status": case.adjudication_status,
+        "review_questions": list(case.review_questions),
+    }
+
+
 def _family_adjudication_summary_to_json(summary: FamilyAdjudicationSummary) -> dict[str, JsonValue]:
     return {
         "family": summary.family,
@@ -393,10 +500,39 @@ def adjudication_report_to_json(report: AdjudicationReport) -> dict[str, JsonVal
     }
 
 
+def residual_adjudication_report_to_json(report: ResidualAdjudicationReport) -> dict[str, JsonValue]:
+    return {
+        "source_model_id": report.source_model_id,
+        "source_revision": report.source_revision,
+        "source_selected_device": report.source_selected_device,
+        "evaluation_strategy": report.evaluation_strategy,
+        "task_name": report.task_name,
+        "method_name": report.method_name,
+        "reference_feature_key": report.reference_feature_key,
+        "candidate_feature_key": report.candidate_feature_key,
+        "reference_error_count": report.reference_error_count,
+        "candidate_error_count": report.candidate_error_count,
+        "introduced_error_count": report.introduced_error_count,
+        "case_count": report.case_count,
+        "family_summaries": [
+            _family_adjudication_summary_to_json(summary)
+            for summary in report.family_summaries
+        ],
+        "cases": [_residual_case_to_json(case) for case in report.cases],
+    }
+
+
 def write_adjudication_json(path: Path, report: AdjudicationReport) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as file:
         json.dump(adjudication_report_to_json(report), file, indent=2)
+        file.write("\n")
+
+
+def write_residual_adjudication_json(path: Path, report: ResidualAdjudicationReport) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as file:
+        json.dump(residual_adjudication_report_to_json(report), file, indent=2)
         file.write("\n")
 
 
@@ -471,6 +607,67 @@ def render_adjudication_markdown(report: AdjudicationReport) -> str:
     return "\n".join(lines)
 
 
+def render_residual_adjudication_markdown(report: ResidualAdjudicationReport) -> str:
+    lines = [
+        "# Residual Error Adjudication",
+        "",
+        "## Source",
+        "",
+        f"- Model: `{report.source_model_id}`",
+        f"- Revision: `{report.source_revision}`",
+        f"- Extraction device: `{report.source_selected_device}`",
+        f"- Evaluation strategy: `{report.evaluation_strategy}`",
+        f"- Task: `{report.task_name}`",
+        f"- Method: `{report.method_name}`",
+        f"- Reference feature: `{report.reference_feature_key}`",
+        f"- Candidate feature: `{report.candidate_feature_key}`",
+        f"- Reference errors: `{report.reference_error_count}`",
+        f"- Candidate errors: `{report.candidate_error_count}`",
+        f"- Introduced errors: `{report.introduced_error_count}`",
+        f"- Cases requiring review: `{report.case_count}`",
+        "",
+        "## Family Summary",
+        "",
+        "| Family | Cases |",
+        "|---|---:|",
+    ]
+    for summary in report.family_summaries:
+        lines.append(f"| `{summary.family}` | {summary.case_count} |")
+
+    lines.extend(["", "## Cases", ""])
+    for index, case in enumerate(report.cases, start=1):
+        lines.extend(
+            [
+                f"### Case {index}: {case.example_id}",
+                "",
+                f"- Family: `{case.family}`",
+                f"- Reference fold: `{case.reference_fold_index}`",
+                f"- Candidate fold: `{case.candidate_fold_index}`",
+                f"- True label: `{case.true_label}`",
+                f"- Reference prediction: `{case.reference_predicted_label}`",
+                f"- Candidate prediction: `{case.candidate_predicted_label}`",
+                f"- Status: {_status_text(case.adjudication_status)}",
+                "",
+                "Prompt:",
+                "",
+                f"> {case.prompt_text}",
+                "",
+                "Review questions:",
+                "",
+            ]
+        )
+        for question in case.review_questions:
+            lines.append(f"- {question}")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
 def write_adjudication_markdown(path: Path, report: AdjudicationReport) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(render_adjudication_markdown(report), encoding="utf-8")
+
+
+def write_residual_adjudication_markdown(path: Path, report: ResidualAdjudicationReport) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(render_residual_adjudication_markdown(report), encoding="utf-8")

@@ -309,6 +309,14 @@
       "dataset_id": "hard_prompts_v3",
       "artifact_id": "qwen3_0_6b_hard_v3_all_layers_v1",
       "evaluation_strategy": "stratified_group_kfold"
+    },
+    {
+      "id": "hard_v3_combined_regression_adjudication_v1",
+      "path": "introspection/data/reports/hard_v3_combined_regression_adjudication.json",
+      "sha256": "5678d33b87a4d2948e0a69cb2c7bd2d73029f89fc07cdadbe2bf421bf92b5c8d",
+      "dataset_id": "hard_prompts_v3",
+      "artifact_id": "qwen3_0_6b_hard_v3_all_layers_v1",
+      "evaluation_strategy": "stratified_group_kfold"
     }
   ]
 }

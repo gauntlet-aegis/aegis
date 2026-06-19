@@ -5,9 +5,13 @@ from pathlib import Path
 
 from aegis_introspection.adjudication import (
     build_adjudication_report,
+    build_residual_adjudication_report,
     render_adjudication_markdown,
+    render_residual_adjudication_markdown,
     write_adjudication_json,
     write_adjudication_markdown,
+    write_residual_adjudication_json,
+    write_residual_adjudication_markdown,
 )
 from aegis_introspection.binary_tasks import BinaryMethodName
 from aegis_introspection.error_analysis import (
@@ -18,6 +22,11 @@ from aegis_introspection.error_analysis import (
     BinaryTaskErrorAnalysis,
 )
 from aegis_introspection.prompts import PromptExample
+from aegis_introspection.residual_error_comparison import (
+    ResidualErrorComparisonReport,
+    ResidualErrorExample,
+    ResidualErrorFamilySummary,
+)
 
 
 def _prediction(
@@ -143,6 +152,68 @@ def _examples() -> tuple[PromptExample, ...]:
     )
 
 
+def _residual_example(
+    example_id: str,
+    family: str,
+    true_label: str,
+    reference_predicted_label: str,
+    candidate_predicted_label: str,
+) -> ResidualErrorExample:
+    return ResidualErrorExample(
+        example_id=example_id,
+        family=family,
+        source_label=true_label,
+        true_label=true_label,
+        reference_predicted_label=reference_predicted_label,
+        candidate_predicted_label=candidate_predicted_label,
+        reference_fold_index=2,
+        candidate_fold_index=2,
+    )
+
+
+def _residual_report() -> ResidualErrorComparisonReport:
+    introduced_error = _residual_example(
+        example_id="hard_v2_safe_001",
+        family="hard_v2_safe_output_contract_limited_fields",
+        true_label="secret_present_safe",
+        reference_predicted_label="secret_present_safe",
+        candidate_predicted_label="exfiltration_intent",
+    )
+    return ResidualErrorComparisonReport(
+        source_model_id="synthetic",
+        source_revision="main",
+        source_selected_device="cpu",
+        evaluation_strategy="stratified_group_kfold",
+        fold_count=2,
+        random_seed=7,
+        regularization_c=1.0,
+        max_iter=1000,
+        task_name="safe_secret_vs_exfiltration",
+        method_name="activation_probe",
+        reference_feature_key="final_token_layer_16",
+        candidate_feature_key="concat(final_token_layer_11,final_token_layer_16)",
+        prediction_count=2,
+        reference_error_count=0,
+        candidate_error_count=1,
+        reference_accuracy=1.0,
+        candidate_accuracy=0.5,
+        fixed_error_count=0,
+        persistent_error_count=0,
+        introduced_error_count=1,
+        fixed_errors=(),
+        persistent_errors=(),
+        introduced_errors=(introduced_error,),
+        family_summaries=(
+            ResidualErrorFamilySummary(
+                family="hard_v2_safe_output_contract_limited_fields",
+                fixed_error_count=0,
+                persistent_error_count=0,
+                introduced_error_count=1,
+            ),
+        ),
+    )
+
+
 class AdjudicationTest(unittest.TestCase):
     def test_build_adjudication_report_includes_only_subject_method_errors_with_prompt_text(self) -> None:
         report = build_adjudication_report(
@@ -202,6 +273,56 @@ class AdjudicationTest(unittest.TestCase):
         self.assertEqual("safe_secret_vs_exfiltration", decoded["task_name"])
         self.assertEqual(1, len(decoded["cases"]))
         self.assertIn("Error Adjudication", markdown)
+
+    def test_build_residual_adjudication_report_includes_introduced_errors_with_prompt_text(self) -> None:
+        report = build_residual_adjudication_report(
+            residual_report=_residual_report(),
+            examples=_examples(),
+        )
+
+        self.assertEqual("safe_secret_vs_exfiltration", report.task_name)
+        self.assertEqual("final_token_layer_16", report.reference_feature_key)
+        self.assertEqual("concat(final_token_layer_11,final_token_layer_16)", report.candidate_feature_key)
+        self.assertEqual(1, report.case_count)
+        case = report.cases[0]
+        self.assertEqual("hard_v2_safe_001", case.example_id)
+        self.assertEqual("secret_present_safe", case.reference_predicted_label)
+        self.assertEqual("exfiltration_intent", case.candidate_predicted_label)
+        self.assertIn("risk_level", case.prompt_text)
+        self.assertEqual("pending_human_review", case.adjudication_status)
+
+    def test_render_residual_adjudication_markdown_includes_prediction_comparison(self) -> None:
+        report = build_residual_adjudication_report(
+            residual_report=_residual_report(),
+            examples=_examples(),
+        )
+
+        markdown = render_residual_adjudication_markdown(report)
+
+        self.assertIn("# Residual Error Adjudication", markdown)
+        self.assertIn("Reference feature: `final_token_layer_16`", markdown)
+        self.assertIn("Candidate feature: `concat(final_token_layer_11,final_token_layer_16)`", markdown)
+        self.assertIn("Reference prediction: `secret_present_safe`", markdown)
+        self.assertIn("Candidate prediction: `exfiltration_intent`", markdown)
+
+    def test_write_residual_adjudication_outputs_creates_files(self) -> None:
+        report = build_residual_adjudication_report(
+            residual_report=_residual_report(),
+            examples=_examples(),
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            json_path = Path(temp_dir) / "residual_adjudication.json"
+            markdown_path = Path(temp_dir) / "residual_adjudication.md"
+            write_residual_adjudication_json(json_path, report)
+            write_residual_adjudication_markdown(markdown_path, report)
+
+            decoded = json.loads(json_path.read_text(encoding="utf-8"))
+            markdown = markdown_path.read_text(encoding="utf-8")
+
+        self.assertEqual("final_token_layer_16", decoded["reference_feature_key"])
+        self.assertEqual(1, len(decoded["cases"]))
+        self.assertIn("Residual Error Adjudication", markdown)
 
 
 if __name__ == "__main__":
