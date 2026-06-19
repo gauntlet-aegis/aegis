@@ -6,10 +6,22 @@ end-to-end at any stage of the build. As later milestones land, more detectors c
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from sentinel.config import Settings
+from sentinel.detect.cift.detector import CIFTDetector
 from sentinel.detect.dp_honey.conformal import load_threshold
 from sentinel.detect.dp_honey.generator import load_models, make_generator
 from sentinel.detect.dp_honey.scanner import CrossEncodingScanner
+from sentinel.events.schema import Mode
+
+
+def _cift_threshold(settings: Settings) -> float:
+    p = Path("data/cift/threshold.json")
+    if p.exists():
+        return json.loads(p.read_text())["threshold"]
+    return settings.cift.threshold
 
 
 def build_detectors(settings: Settings) -> dict:
@@ -21,5 +33,11 @@ def build_detectors(settings: Settings) -> dict:
     detectors["dp_honey_scanner"] = CrossEncodingScanner()
     detectors["dp_honey_fuzzy_threshold"] = load_threshold(settings.dp_honey.threshold_path)
 
-    # CIFT (M5) and NIMBUS (M6) wire in here as their artifacts come online.
+    # CIFT (white-box only): loaded if its artifacts exist; else the stage stays a benign stub.
+    if settings.mode == Mode.WHITEBOX:
+        detectors["cift"] = CIFTDetector.load(
+            settings.cift.stats_path, settings.cift.probe_path, _cift_threshold(settings)
+        )
+
+    # NIMBUS (M6) wires in here as its artifact comes online.
     return detectors

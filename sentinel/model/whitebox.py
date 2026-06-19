@@ -46,6 +46,29 @@ class WhiteBoxHost(ModelHost):
         return snap
 
     @torch.no_grad()
+    def readout(self, messages: list[dict]) -> dict[int, torch.Tensor]:
+        """Capture just the two readout positions (final prompt + first decision) — no full decode.
+
+        Used for CIFT feature extraction over the training set; much cheaper than generate().
+        """
+        input_ids = self.tokenizer.apply_chat_template(
+            messages, add_generation_prompt=True, return_tensors="pt"
+        ).to(self.device)
+        readouts: dict[int, list[torch.Tensor]] = {li: [] for li in self.hooked}
+        self.hooks.arm()
+        try:
+            out = self.model(input_ids, use_cache=True)  # prefill
+            for li, v in self._readout_snapshot(-1).items():
+                readouts[li].append(v)
+            next_id = out.logits[:, -1, :].argmax(dim=-1, keepdim=True)
+            self.model(next_id, past_key_values=out.past_key_values, use_cache=True)  # first decode
+            for li, v in self._readout_snapshot(-1).items():
+                readouts[li].append(v)
+        finally:
+            self.hooks.disarm()
+        return {li: torch.stack(vs) for li, vs in readouts.items()}
+
+    @torch.no_grad()
     def generate(self, messages: list[dict]) -> GenResult:
         t0 = time.perf_counter()
         input_ids = self.tokenizer.apply_chat_template(
