@@ -416,6 +416,25 @@ next constrained direction should be supervised but regularized: e.g.,
 non-negative logistic weights, simplex weights, or calibrated source scores
 before aggregation.
 
+A supervised constrained-combiner follow-up tested non-negative logistic weights
+and simplex-constrained logistic weights. These variants are better than raw
+monotone aggregation, but still weaker than the unconstrained logistic
+meta-head. Both constrained supervised variants produce 23 total candidate
+errors and 17 introduced errors across Hard V2/Hard V3, versus 12 and 6 for the
+current logistic meta-head.
+
+| Combiner | Candidate Errors | Fixed | Persistent | Introduced | Net Error Delta |
+|---|---:|---:|---:|---:|---:|
+| Logistic meta-head | 12 | 3 | 6 | 6 | 3 |
+| Positive logistic | 23 | 3 | 6 | 17 | 14 |
+| Simplex logistic | 23 | 3 | 6 | 17 | 14 |
+
+The result suggests the signed logistic weights are not merely overfitting
+noise; they are correcting source-score inversions that the current source
+heads produce. The next refinement should preserve supervised correction while
+testing safer operating points, such as fold-learned thresholds or explicit
+source-score calibration.
+
 ## Project Layout
 
 ```text
@@ -754,6 +773,7 @@ Key human-readable checkpoints:
 - `data/reports/cift_meta_score_diagnostics_hard_v2_v1_summary.md`
 - `data/reports/cift_meta_source_ablation_v1_summary.md`
 - `data/reports/cift_meta_combiner_ablation_v1_summary.md`
+- `data/reports/cift_meta_combiner_ablation_v2_summary.md`
 
 Key machine-readable reports registered in lineage:
 
@@ -795,6 +815,7 @@ Key machine-readable reports registered in lineage:
 - `data/reports/cift_meta_score_diagnostics_hard_v2_v1.json`
 - `data/reports/cift_meta_source_ablation_v1.json`
 - `data/reports/cift_meta_combiner_ablation_v1.json`
+- `data/reports/cift_meta_combiner_ablation_v2.json`
 
 ## Next Moves
 
@@ -813,9 +834,9 @@ Recommended sequence:
    final-token candidates remain under evaluation.
 4. Define a promotion rule that weighs average performance, worst-case
    checkpoint performance, and post-hoc discovery risk.
-5. For CIFT-like work, move beyond raw monotone combiners and test supervised
-   but constrained combination: non-negative logistic weights, simplex weights,
-   or calibrated source scores while preserving the Hard V3 fixed cases.
+5. For CIFT-like work, preserve supervised correction while testing safer
+   operating points: fold-learned thresholds, source-score calibration, or
+   regularized signed weights that keep the Hard V3 fixed cases.
 6. Keep registering every dataset, artifact, and machine-readable report in
    `data/lineage.json`.
 

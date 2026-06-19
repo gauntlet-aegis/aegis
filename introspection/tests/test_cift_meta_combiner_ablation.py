@@ -147,6 +147,26 @@ def _variants() -> tuple[CiftMetaCombinerVariant, ...]:
             inner_fold_count=2,
             combiner_rule="top_two_mean",
         ),
+        CiftMetaCombinerVariant(
+            variant_id="positive_logistic",
+            feature_name="cift_meta_combiner_positive_logistic",
+            source_feature_keys=source_feature_keys,
+            calibration_source_labels=("secret_present_safe",),
+            ridge=0.001,
+            risk_label="exfiltration_intent",
+            inner_fold_count=2,
+            combiner_rule="positive_logistic",
+        ),
+        CiftMetaCombinerVariant(
+            variant_id="simplex_logistic",
+            feature_name="cift_meta_combiner_simplex_logistic",
+            source_feature_keys=source_feature_keys,
+            calibration_source_labels=("secret_present_safe",),
+            ridge=0.001,
+            risk_label="exfiltration_intent",
+            inner_fold_count=2,
+            combiner_rule="simplex_logistic",
+        ),
     )
 
 
@@ -161,10 +181,10 @@ class CiftMetaCombinerAblationTest(unittest.TestCase):
             binary_config=_binary_config(),
         )
 
-        self.assertEqual(3, report.variant_count)
+        self.assertEqual(5, report.variant_count)
         self.assertEqual("weak_baseline_feature", report.baseline_feature_key)
         self.assertEqual(
-            ("logistic_meta_head", "mean_score", "top_two_mean"),
+            ("logistic_meta_head", "mean_score", "top_two_mean", "positive_logistic", "simplex_logistic"),
             tuple(summary.combiner_rule for summary in report.variant_summaries),
         )
         self.assertGreaterEqual(report.best_variant_summary.candidate_error_count, 0)
@@ -204,7 +224,7 @@ class CiftMetaCombinerAblationTest(unittest.TestCase):
             decoded = json.loads(json_path.read_text(encoding="utf-8"))
             markdown = markdown_path.read_text(encoding="utf-8")
 
-        self.assertEqual(3, decoded["variant_count"])
+        self.assertEqual(5, decoded["variant_count"])
         self.assertIn("best_variant_summary", decoded)
         self.assertIn("CIFT Meta-Head Combiner Ablation", markdown)
 

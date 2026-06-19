@@ -6,6 +6,9 @@ from pathlib import Path
 from typing import Literal, TypeAlias
 
 import numpy as np
+from numpy.typing import NDArray
+from scipy.optimize import minimize
+from scipy.optimize import Bounds, LinearConstraint
 
 from aegis_introspection.artifacts import ActivationArtifact
 from aegis_introspection.binary_tasks import (
@@ -20,7 +23,9 @@ from aegis_introspection.binary_tasks import (
 )
 from aegis_introspection.cift_meta_head import (
     CiftMetaHeadExampleDiagnostic,
+    CiftMetaHeadSourceScoreFold,
     CiftMetaHeadVariant,
+    collect_grouped_cift_meta_head_source_score_folds,
     collect_grouped_cift_meta_head_diagnostics,
     collect_grouped_cift_meta_head_predictions,
 )
@@ -45,7 +50,12 @@ CiftMetaCombinerRule: TypeAlias = Literal[
     "max_score",
     "top_two_mean",
     "majority_vote",
+    "positive_logistic",
+    "simplex_logistic",
 ]
+
+FloatVector: TypeAlias = NDArray[np.float64]
+FloatMatrix: TypeAlias = NDArray[np.float64]
 
 
 @dataclass(frozen=True)
@@ -64,6 +74,14 @@ class CiftMetaCombinerVariant:
     risk_label: str
     inner_fold_count: int
     combiner_rule: CiftMetaCombinerRule
+
+
+@dataclass(frozen=True)
+class _ConstrainedLogisticFit:
+    intercept: float
+    coefficients: FloatVector
+    feature_mean: FloatVector
+    feature_scale: FloatVector
 
 
 @dataclass(frozen=True)
@@ -146,6 +164,8 @@ def _validate_variant(variant: CiftMetaCombinerVariant) -> None:
         "max_score",
         "top_two_mean",
         "majority_vote",
+        "positive_logistic",
+        "simplex_logistic",
     ):
         raise BinaryTaskError(
             f"CIFT combiner variant '{variant.variant_id}' has unsupported combiner rule "
@@ -225,6 +245,150 @@ def _combine_source_scores(
     raise BinaryTaskError(f"Combiner rule '{combiner_rule}' does not use source-score aggregation.")
 
 
+def _sigmoid(values: FloatVector) -> FloatVector:
+    return (1.0 / (1.0 + np.exp(-values))).astype(np.float64, copy=False)
+
+
+def _risk_label_index(label_names: tuple[str, ...], risk_label: str) -> int:
+    matches = tuple(index for index, label_name in enumerate(label_names) if label_name == risk_label)
+    if len(matches) != 1:
+        raise BinaryTaskError(f"CIFT combiner risk label '{risk_label}' is not in labels {label_names}.")
+    return matches[0]
+
+
+def _balanced_sample_weights(labels: FloatVector) -> FloatVector:
+    positive_count = float(np.sum(labels))
+    negative_count = float(labels.shape[0] - positive_count)
+    if positive_count == 0.0 or negative_count == 0.0:
+        raise BinaryTaskError("CIFT constrained combiner requires both classes in each training fold.")
+    positive_weight = labels.shape[0] / (2.0 * positive_count)
+    negative_weight = labels.shape[0] / (2.0 * negative_count)
+    return np.asarray(
+        [positive_weight if label == 1.0 else negative_weight for label in labels.tolist()],
+        dtype=np.float64,
+    )
+
+
+def _standardized_train_scores(scores: FloatMatrix) -> tuple[FloatMatrix, FloatVector, FloatVector]:
+    feature_mean = scores.mean(axis=0).astype(np.float64, copy=False)
+    feature_scale = scores.std(axis=0).astype(np.float64, copy=False)
+    safe_scale = np.where(feature_scale == 0.0, 1.0, feature_scale).astype(np.float64, copy=False)
+    standardized = ((scores - feature_mean) / safe_scale).astype(np.float64, copy=False)
+    return standardized, feature_mean, safe_scale
+
+
+def _standardize_scores(scores: FloatMatrix, feature_mean: FloatVector, feature_scale: FloatVector) -> FloatMatrix:
+    return ((scores - feature_mean) / feature_scale).astype(np.float64, copy=False)
+
+
+def _fit_constrained_logistic(
+    train_scores: FloatMatrix,
+    train_labels: NDArray[np.int64],
+    label_names: tuple[str, ...],
+    variant: CiftMetaCombinerVariant,
+    binary_config: BinaryTaskConfig,
+) -> _ConstrainedLogisticFit:
+    risk_index = _risk_label_index(label_names=label_names, risk_label=variant.risk_label)
+    binary_labels = (train_labels == risk_index).astype(np.float64, copy=False)
+    sample_weights = _balanced_sample_weights(binary_labels)
+    standardized_scores, feature_mean, feature_scale = _standardized_train_scores(train_scores)
+    feature_count = standardized_scores.shape[1]
+    initial = np.zeros(feature_count + 1, dtype=np.float64)
+    initial[1:] = 1.0 / float(feature_count)
+    regularization = 1.0 / binary_config.regularization_c
+
+    def objective(parameters: FloatVector) -> float:
+        intercept = parameters[0]
+        coefficients = parameters[1:]
+        logits = intercept + standardized_scores @ coefficients
+        losses = np.logaddexp(0.0, logits) - binary_labels * logits
+        weighted_loss = float(np.mean(sample_weights * losses))
+        penalty = float(0.5 * regularization * np.sum(coefficients * coefficients) / float(feature_count))
+        return weighted_loss + penalty
+
+    bounds = Bounds(
+        lb=np.asarray([-np.inf] + [0.0 for _ in range(feature_count)], dtype=np.float64),
+        ub=np.asarray([np.inf] + [np.inf for _ in range(feature_count)], dtype=np.float64),
+    )
+    constraints: tuple[LinearConstraint, ...] = ()
+    method = "L-BFGS-B"
+    if variant.combiner_rule == "simplex_logistic":
+        constraint_row = np.asarray([0.0] + [1.0 for _ in range(feature_count)], dtype=np.float64)
+        constraints = (LinearConstraint(constraint_row, lb=1.0, ub=1.0),)
+        method = "SLSQP"
+
+    result = minimize(
+        objective,
+        initial,
+        method=method,
+        bounds=bounds,
+        constraints=constraints,
+        options={"maxiter": binary_config.max_iter},
+    )
+    if not result.success:
+        raise BinaryTaskError(
+            f"CIFT constrained combiner '{variant.variant_id}' optimization failed: {result.message}."
+        )
+    parameters = np.asarray(result.x, dtype=np.float64)
+    return _ConstrainedLogisticFit(
+        intercept=float(parameters[0]),
+        coefficients=parameters[1:].astype(np.float64, copy=False),
+        feature_mean=feature_mean,
+        feature_scale=feature_scale,
+    )
+
+
+def _predict_constrained_logistic_scores(
+    fit: _ConstrainedLogisticFit,
+    test_scores: FloatMatrix,
+) -> FloatVector:
+    standardized_scores = _standardize_scores(
+        scores=test_scores,
+        feature_mean=fit.feature_mean,
+        feature_scale=fit.feature_scale,
+    )
+    logits = fit.intercept + standardized_scores @ fit.coefficients
+    return _sigmoid(logits)
+
+
+def _predictions_from_source_score_folds(
+    dataset: BinaryTaskDataset,
+    variant: CiftMetaCombinerVariant,
+    folds: tuple[CiftMetaHeadSourceScoreFold, ...],
+    binary_config: BinaryTaskConfig,
+) -> BinaryMethodErrorAnalysis:
+    predictions: list[BinaryExamplePrediction] = []
+    for fold in folds:
+        fit = _fit_constrained_logistic(
+            train_scores=fold.train_scores,
+            train_labels=fold.train_labels,
+            label_names=fold.label_names,
+            variant=variant,
+            binary_config=binary_config,
+        )
+        risk_scores = _predict_constrained_logistic_scores(fit=fit, test_scores=fold.test_scores)
+        other_label = _other_label(dataset.target_labels, variant.risk_label)
+        for row_index, risk_score in zip(fold.test_indices.tolist(), risk_scores.tolist(), strict=True):
+            predicted_label = variant.risk_label if risk_score >= 0.5 else other_label
+            true_label = dataset.target_labels[row_index]
+            predictions.append(
+                BinaryExamplePrediction(
+                    fold_index=fold.fold_index,
+                    example_id=dataset.example_ids[row_index],
+                    family=dataset.families[row_index],
+                    source_label=dataset.source_labels[row_index],
+                    true_label=true_label,
+                    predicted_label=predicted_label,
+                    is_correct=predicted_label == true_label,
+                )
+            )
+    return _method_error_analysis(
+        feature_name=variant.feature_name,
+        label_names=folds[0].label_names,
+        predictions=tuple(predictions),
+    )
+
+
 def _method_error_analysis(
     feature_name: str,
     label_names: tuple[str, ...],
@@ -294,6 +458,19 @@ def _collect_candidate_predictions(
             dataset=dataset,
             binary_config=binary_config,
             variant=_head_variant(variant),
+        )
+    if variant.combiner_rule in ("positive_logistic", "simplex_logistic"):
+        folds = collect_grouped_cift_meta_head_source_score_folds(
+            artifact=artifact,
+            dataset=dataset,
+            binary_config=binary_config,
+            variant=_head_variant(variant),
+        )
+        return _predictions_from_source_score_folds(
+            dataset=dataset,
+            variant=variant,
+            folds=folds,
+            binary_config=binary_config,
         )
     return _collect_constrained_combiner_predictions(
         artifact=artifact,

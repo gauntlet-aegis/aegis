@@ -106,6 +106,19 @@ class CiftMetaHeadExampleDiagnostic:
 
 
 @dataclass(frozen=True)
+class CiftMetaHeadSourceScoreFold:
+    fold_index: int
+    source_feature_keys: tuple[str, ...]
+    label_names: tuple[str, ...]
+    train_indices: IntVector
+    test_indices: IntVector
+    train_scores: FloatMatrix
+    test_scores: FloatMatrix
+    train_labels: IntVector
+    test_labels: IntVector
+
+
+@dataclass(frozen=True)
 class CiftMetaHeadVariantReport:
     variant_id: str
     feature_name: str
@@ -952,6 +965,49 @@ def collect_grouped_cift_meta_head_diagnostics(
     if len(diagnostics) == 0:
         raise BinaryTaskError(f"CIFT meta-head variant '{variant.variant_id}' produced no diagnostics.")
     return tuple(diagnostics)
+
+
+def collect_grouped_cift_meta_head_source_score_folds(
+    artifact: ActivationArtifact,
+    dataset: BinaryTaskDataset,
+    binary_config: BinaryTaskConfig,
+    variant: CiftMetaHeadVariant,
+) -> tuple[CiftMetaHeadSourceScoreFold, ...]:
+    _validate_variant(variant)
+    label_encoding = encode_labels(dataset.target_labels)
+    encoded_labels = label_encoding.encoded_labels
+    risk_index = _risk_label_index(label_encoding.label_names, variant)
+    splits = stratified_group_splits(encoded_labels, dataset.families, binary_config)
+    folds: list[CiftMetaHeadSourceScoreFold] = []
+
+    for split in splits:
+        scores = _outer_fold_scores(
+            artifact=artifact,
+            dataset=dataset,
+            outer_train_indices=split.train_indices,
+            outer_test_indices=split.test_indices,
+            encoded_labels=encoded_labels,
+            binary_config=binary_config,
+            variant=variant,
+            risk_label_index=risk_index,
+        )
+        folds.append(
+            CiftMetaHeadSourceScoreFold(
+                fold_index=split.fold_index,
+                source_feature_keys=variant.source_feature_keys,
+                label_names=label_encoding.label_names,
+                train_indices=split.train_indices,
+                test_indices=split.test_indices,
+                train_scores=scores.train_scores,
+                test_scores=scores.test_scores,
+                train_labels=encoded_labels[split.train_indices],
+                test_labels=encoded_labels[split.test_indices],
+            )
+        )
+
+    if len(folds) == 0:
+        raise BinaryTaskError(f"CIFT meta-head variant '{variant.variant_id}' produced no source-score folds.")
+    return tuple(folds)
 
 
 def _best_variant(variants: tuple[CiftMetaHeadVariantReport, ...]) -> CiftMetaHeadVariantReport:
