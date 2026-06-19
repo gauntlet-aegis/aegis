@@ -96,6 +96,14 @@ The V3 layer sweep found a stronger local feature, `final_token_layer_16`, at
 0.9321 macro F1 / 0.9333 accuracy. Treat that as a diagnostic result, not a new
 replacement, until it is checked against the earlier datasets.
 
+The feature-stability check compares `mean_pool_layer_18`,
+`final_token_layer_11`, and `final_token_layer_16` across all four checkpoints.
+`final_token_layer_11` remains the best average performer at 0.8978 mean macro
+F1, while `final_token_layer_16` is the stability challenger: it has the higher
+minimum macro F1, the smaller range, and wins baseline plus Hard V3. The
+historical reference wins none of the three-feature checkpoint comparisons, but
+still anchors the experiment history.
+
 ## Project Layout
 
 ```text
@@ -288,6 +296,13 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/sheep/Desktop/Gauntlet/Capstone/intr
   --output-md introspection/data/reports/candidate_feature_crosscheck_with_hard_v3_summary.md
 ```
 
+Run the three-feature stability check:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/sheep/Desktop/Gauntlet/Capstone/introspection/src \
+  /Users/sheep/Desktop/Gauntlet/Capstone/.venv-introspection/bin/python introspection/scripts/compare_feature_stability.py
+```
+
 ## Reports
 
 Key human-readable checkpoints:
@@ -325,6 +340,8 @@ Key human-readable checkpoints:
 - `data/reports/binary_layer_sweep_hard_v3_grouped_summary.md`
 - `data/reports/hard_v3_candidate_error_adjudication_summary.md`
 - `data/reports/hard_v3_heldout_validation_progress_2026-06-19.md`
+- `data/reports/feature_stability_reference_l11_l16_summary.md`
+- `data/reports/feature_stability_progress_2026-06-19.md`
 
 Key machine-readable reports registered in lineage:
 
@@ -352,21 +369,23 @@ Key machine-readable reports registered in lineage:
 - `data/reports/hard_v3_candidate_residual_error_comparison.json`
 - `data/reports/binary_layer_sweep_hard_v3_grouped.json`
 - `data/reports/hard_v3_candidate_error_adjudication.json`
+- `data/reports/feature_stability_reference_l11_l16.json`
 
 ## Next Moves
 
-The next experimental step is a feature-stability check, not silent promotion of
-the latest sweep winner.
+The next experimental step is defining and testing a feature-selection rule, not
+silently promoting either final-token feature.
 
 Recommended sequence:
 
 1. Human-review the Hard V3 candidate errors, especially the introduced safe
    examples classified as exfiltration.
-2. Cross-check `final_token_layer_16` against baseline, Hard V1, Hard V2, and
-   Hard V3 as a diagnostic candidate.
+2. Evaluate a small combined-feature probe using `final_token_layer_11` and
+   `final_token_layer_16` together.
 3. Keep `mean_pool_layer_18` as the fixed regression checkpoint while
    final-token candidates remain under evaluation.
-4. Define a feature-selection rule before promoting any post-hoc sweep winner.
+4. Define a promotion rule that weighs average performance, worst-case
+   checkpoint performance, and post-hoc discovery risk.
 5. Keep registering every dataset, artifact, and machine-readable report in
    `data/lineage.json`.
 
