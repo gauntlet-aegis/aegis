@@ -297,6 +297,27 @@ therefore move past simple final-token layer weighting toward a richer CFS-like
 head with out-of-fold per-layer scores and readout positions beyond the final
 prompt token.
 
+A first out-of-fold CIFT meta-head now trains per-source residual classifiers
+inside inner grouped folds, uses their out-of-fold exfiltration-risk scores as
+meta-head features, and compares final-token last-quarter sources against an
+expanded final-token plus mean-pool source set. The expanded source set is the
+best CIFT-like variant on every checkpoint, and it is the first CIFT-like
+checkpoint to beat the combined static feature on any registered dataset:
+
+| Dataset | Combined Macro F1 | Best Meta-Head Macro F1 | Delta Macro F1 | Winner |
+|---|---:|---:|---:|---|
+| Baseline | 0.8804 | 0.8598 | -0.0206 | combined static |
+| Hard V1 | 0.9331 | 0.8788 | -0.0543 | combined static |
+| Hard V2 | 0.9657 | 0.8823 | -0.0834 | combined static |
+| Hard V3 | 0.8811 | 0.9156 | +0.0345 | OOF meta-head |
+
+This is not a promotion result because the combined static feature still wins
+three of four checkpoints, including Hard V2. It is useful because mean-pool
+readout expansion improves every checkpoint relative to final-token-only CIFT
+meta-learning: 0.8841 mean macro F1 versus 0.8209. The next CIFT work should
+analyze the Hard V3 win and Hard V2 deficit, then test calibration/readout
+variants before changing the monitor contract.
+
 ## Project Layout
 
 ```text
@@ -524,6 +545,13 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/sheep/Desktop/Gauntlet/Capstone/intr
   /Users/sheep/Desktop/Gauntlet/Capstone/.venv-introspection/bin/python introspection/scripts/compare_cift_layer_head.py
 ```
 
+Run the CIFT out-of-fold meta-head comparison:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/sheep/Desktop/Gauntlet/Capstone/introspection/src \
+  /Users/sheep/Desktop/Gauntlet/Capstone/.venv-introspection/bin/python introspection/scripts/compare_cift_meta_head.py
+```
+
 Build the Hard V3 combined-regression adjudication worksheet:
 
 ```bash
@@ -584,6 +612,8 @@ Key human-readable checkpoints:
 - `data/reports/cift_like_ablation_v3_progress_2026-06-19.md`
 - `data/reports/cift_layer_weighted_head_v1_summary.md`
 - `data/reports/cift_layer_weighted_head_v1_progress_2026-06-19.md`
+- `data/reports/cift_meta_head_v1_summary.md`
+- `data/reports/cift_meta_head_v1_progress_2026-06-19.md`
 
 Key machine-readable reports registered in lineage:
 
@@ -619,6 +649,7 @@ Key machine-readable reports registered in lineage:
 - `data/reports/cift_like_ablation_v2.json`
 - `data/reports/cift_like_ablation_v3.json`
 - `data/reports/cift_layer_weighted_head_v1.json`
+- `data/reports/cift_meta_head_v1.json`
 
 ## Next Moves
 
@@ -637,8 +668,8 @@ Recommended sequence:
    final-token candidates remain under evaluation.
 4. Define a promotion rule that weighs average performance, worst-case
    checkpoint performance, and post-hoc discovery risk.
-5. For CIFT-like work, implement a richer CFS-like head with out-of-fold
-   per-layer scores and readout positions beyond the final prompt token.
+5. For CIFT-like work, analyze the OOF meta-head Hard V3 win and Hard V2
+   deficit, then test calibration and readout-source variants.
 6. Keep registering every dataset, artifact, and machine-readable report in
    `data/lineage.json`.
 
