@@ -19,6 +19,5 @@ dp_honey:
   alpha: 0.05
 
 nimbus:
-  critic_path: data/nimbus/critic.pt
-  budget_bits: 16.0
+  budget_bits: 4.66   # calibrated by scripts/train_nimbus.py (benign max 2.33, long-drip median 8.51)
   n_neg: 63

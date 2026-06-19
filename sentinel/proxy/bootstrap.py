@@ -9,11 +9,16 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import numpy as np
+
 from sentinel.config import Settings
 from sentinel.detect.cift.detector import CIFTDetector
 from sentinel.detect.dp_honey.conformal import load_threshold
 from sentinel.detect.dp_honey.generator import load_models, make_generator
 from sentinel.detect.dp_honey.scanner import CrossEncodingScanner
+from sentinel.detect.nimbus.critic import LeakageCritic
+from sentinel.detect.nimbus.encoder import CharNGramEncoder
+from sentinel.detect.nimbus.estimator import NimbusEstimator
 from sentinel.events.schema import Mode
 
 
@@ -39,5 +44,19 @@ def build_detectors(settings: Settings) -> dict:
             settings.cift.stats_path, settings.cift.probe_path, _cift_threshold(settings)
         )
 
-    # NIMBUS (M6) wires in here as its artifact comes online.
+    # NIMBUS (white- & black-box): InfoNCE estimator over char-n-gram features.
+    critic = LeakageCritic.load(settings.nimbus.critic_path)
+    bank_path = Path(settings.nimbus.neg_bank_path)
+    if critic is not None and bank_path.exists():
+        temperature = settings.nimbus.temperature
+        meta = Path(settings.nimbus.meta_path)
+        if meta.exists():
+            temperature = json.loads(meta.read_text()).get("temperature", temperature)
+        detectors["nimbus"] = NimbusEstimator(
+            CharNGramEncoder(dim=settings.nimbus.encoder_dim),
+            critic,
+            np.load(bank_path),
+            n_neg=settings.nimbus.n_neg,
+            temperature=temperature,
+        )
     return detectors

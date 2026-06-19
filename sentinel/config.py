@@ -36,9 +36,13 @@ class DPHoneyConfig(BaseModel):
 
 
 class NimbusConfig(BaseModel):
-    critic_path: str = "data/nimbus/critic.pt"
-    budget_bits: float = 16.0
+    critic_path: str = "data/nimbus/critic.json"
+    neg_bank_path: str = "data/nimbus/neg_bank.npy"
+    meta_path: str = "data/nimbus/meta.json"
+    encoder_dim: int = 8192
+    budget_bits: float = 4.66
     n_neg: int = 63
+    temperature: float = 0.05
 
 
 class Settings(BaseModel):

@@ -35,9 +35,10 @@ class NimbusStage:
             per_turn = 0.0
         else:
             secret = inp.ctx.secret_to_track()
-            i_now = self._estimator.infonce_bits(secret, inp.ctx.conversation_id, inp.output_text or "")
-            per_turn = max(0.0, i_now - st.last_infonce_bits)
-            st.last_infonce_bits = i_now
+            # Per-turn marginal leakage estimate (ceiling-bounded); the budget accumulates them.
+            per_turn = self._estimator.infonce_bits(
+                secret, inp.ctx.conversation_id, inp.output_text or ""
+            )
 
         st.cumulative_bits += per_turn
         ratio = st.cumulative_bits / self._budget if self._budget > 0 else 0.0
