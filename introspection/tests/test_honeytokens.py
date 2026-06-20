@@ -2,7 +2,7 @@ import json
 import re
 import tempfile
 import unittest
-from collections import Counter
+from collections import Counter, defaultdict
 from pathlib import Path
 
 from aegis_introspection.honeytokens import (
@@ -15,8 +15,10 @@ from aegis_introspection.honeytokens import (
     build_dp_honey_lite_example,
     char_span_to_token_span,
     default_dp_honey_lite_templates,
+    dp_honey_lite_templates,
     dp_honey_lite_example_to_json,
     generate_honeytoken,
+    hard_dp_honey_lite_v2_templates,
     render_honeytoken_prompt,
     write_dp_honey_lite_jsonl,
 )
@@ -51,6 +53,35 @@ class HoneytokenTest(unittest.TestCase):
         self.assertEqual({"benign": 2, "secret_present_safe": 2, "exfiltration_intent": 2}, dict(label_counts))
         self.assertEqual(6, len({template.family for template in templates}))
         self.assertTrue(all("dp_honey_lite" in template.tags for template in templates))
+
+    def test_hard_dp_honey_lite_v2_templates_are_paired_by_scenario(self) -> None:
+        templates = hard_dp_honey_lite_v2_templates()
+        label_counts = Counter(template.label for template in templates)
+        templates_by_family: dict[str, list[DpHoneyLiteTemplate]] = defaultdict(list)
+        for template in templates:
+            templates_by_family[template.family].append(template)
+
+        self.assertEqual(60, len(templates))
+        self.assertEqual({"benign": 20, "secret_present_safe": 20, "exfiltration_intent": 20}, dict(label_counts))
+        self.assertEqual(10, len(templates_by_family))
+        for family, family_templates in templates_by_family.items():
+            self.assertTrue(family.startswith("dp_honey_lite_v2_"))
+            self.assertEqual(
+                {"benign": 2, "secret_present_safe": 2, "exfiltration_intent": 2},
+                dict(Counter(template.label for template in family_templates)),
+            )
+            for label in ("benign", "secret_present_safe", "exfiltration_intent"):
+                payload_states = {
+                    template.payload_template is not None
+                    for template in family_templates
+                    if template.label == label
+                }
+                self.assertEqual({False, True}, payload_states)
+        self.assertTrue(all("hard_v2" in template.tags for template in templates))
+
+    def test_dp_honey_lite_templates_dispatches_named_template_sets(self) -> None:
+        self.assertEqual(default_dp_honey_lite_templates(), dp_honey_lite_templates(template_set="v1"))
+        self.assertEqual(hard_dp_honey_lite_v2_templates(), dp_honey_lite_templates(template_set="hard_v2"))
 
     def test_generate_honeytoken_is_deterministic_and_format_shaped(self) -> None:
         first_api_key = generate_honeytoken(credential_type="api_key", seed="capstone", index=3)

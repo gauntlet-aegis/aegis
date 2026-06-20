@@ -61,6 +61,18 @@
         "exfiltration_intent": 8
       },
       "family_count": 6
+    },
+    {
+      "id": "dp_honey_lite_prompts_v2",
+      "path": "introspection/data/prompts_dp_honey_lite_v2.jsonl",
+      "sha256": "c86180a9ec478515e2b8f0848c69aa6738bf13f18b17cff7968eea6fc6c3aa3a",
+      "purpose": "Hard DP-HONEY-lite proxy-shaped prompt dataset with paired scenario labels, balanced credential and payload conditions, span metadata, and CIFT readout windows.",
+      "label_counts": {
+        "benign": 80,
+        "secret_present_safe": 80,
+        "exfiltration_intent": 80
+      },
+      "family_count": 10
     }
   ],
   "artifacts": [

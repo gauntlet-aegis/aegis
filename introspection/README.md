@@ -14,7 +14,7 @@ larger system should be treated as a multi-monitor gateway:
 
 | Component | Role | Current Status |
 |---|---|---|
-| DP-HONEY | Inject format-matched honeytokens before model access. | DP-HONEY-lite data primitive implemented; full DP-HONEY not implemented yet. |
+| DP-HONEY | Inject format-matched honeytokens before model access. | DP-HONEY-lite data primitive and hard V2 dataset implemented; full DP-HONEY not implemented yet. |
 | CIFT-like activation monitor | Read hidden-state features before output generation. | Current focus. |
 | Text leakage detector | Scan generated text for canary or secret leakage. | Not implemented here yet. |
 | NIMBUS-like accumulator | Track cumulative leakage risk over a conversation. | Not implemented here yet. |
@@ -103,7 +103,7 @@ readout-position, calibrated-deviation monitor.
 
 ## Current State
 
-Five datasets are currently registered in `data/lineage.json`:
+Six datasets are currently registered in `data/lineage.json`:
 
 | Dataset | Purpose | Rows |
 |---|---|---:|
@@ -112,6 +112,7 @@ Five datasets are currently registered in `data/lineage.json`:
 | `hard_prompts_v2` | Targeted successor focused on V1 error clusters. | 90 |
 | `hard_prompts_v3` | Held-out summary, redaction, and replacement checkpoint. | 90 |
 | `dp_honey_lite_prompts_v1` | Proxy-shaped honeytoken prompts with span metadata and readout windows. | 24 |
+| `dp_honey_lite_prompts_v2` | Harder paired DP-HONEY-lite scenarios with balanced credential and payload conditions. | 240 |
 
 The four historical probe datasets use the same label shape:
 
@@ -121,11 +122,19 @@ The four historical probe datasets use the same label shape:
 | `secret_present_safe` | 30 | A secret-like value appears, but the prompt asks for safe handling. |
 | `exfiltration_intent` | 30 | The prompt asks to reveal, transmit, encode, route, or leak secret-like material. |
 
-The DP-HONEY-lite dataset uses the same labels with 8 examples per label across
-6 families. Its `benign` rows still contain an injected honeytoken context, but
-the user query is unrelated to secret handling; this is intentional for
-proxy-style monitor development and should not be mixed into historical
+The first DP-HONEY-lite dataset uses the same labels with 8 examples per label
+across 6 families. Its `benign` rows still contain an injected honeytoken
+context, but the user query is unrelated to secret handling; this is intentional
+for proxy-style monitor development and should not be mixed into historical
 static-feature comparisons without calling out the changed data contract.
+
+The hard V2 DP-HONEY-lite dataset keeps that proxy-shaped contract but scales it
+to 240 rows across 10 paired scenario families. Each family contains benign,
+safe-secret, and exfiltration variants; each label has 40 API-key rows, 40
+database-URI rows, 40 payload rows, and 40 no-payload rows. This is the next
+dataset for readout-window activation extraction and same-dataset static-feature
+comparison. It is still DP-HONEY-lite: the honeytokens are format-shaped and
+deterministic, not differentially private n-gram samples.
 
 The first DP-HONEY-lite activation artifact is also registered:
 
@@ -150,8 +159,9 @@ DP-HONEY-lite dataset, the top readout-window layers separate both binary tasks:
 This is a smoke result, not a performance claim. The dataset is small and
 template-shaped, and the perfect scores mostly say the new readout-window
 feature path is wired correctly and worth scaling. The next evidence-producing
-step is a larger DP-HONEY-lite dataset with more families and harder paraphrase
-variation.
+step is extracting readout-window activations for `dp_honey_lite_prompts_v2`,
+then comparing readout-window features against same-dataset static features
+before making any metric claim.
 
 Each prompt has a `family` field. Grouped evaluation uses those families to
 hold related prompt patterns out together.
@@ -601,7 +611,8 @@ introspection/
 │   ├── prompts_hard.jsonl # Hard Baseline V1 dataset
 │   ├── prompts_hard_v2.jsonl # Hard Baseline V2 dataset
 │   ├── prompts_hard_v3.jsonl # Hard Baseline V3 dataset
-│   └── prompts_dp_honey_lite_v1.jsonl # DP-HONEY-lite structured dataset
+│   ├── prompts_dp_honey_lite_v1.jsonl # DP-HONEY-lite structured smoke dataset
+│   └── prompts_dp_honey_lite_v2.jsonl # Hard DP-HONEY-lite paired scenario dataset
 ├── notebooks/            # Interactive exploration notebooks
 ├── scripts/              # CLI entry points for extraction, training, summaries, validation
 ├── src/aegis_introspection/
@@ -663,6 +674,17 @@ Generate the DP-HONEY-lite structured prompt dataset:
 ```bash
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/sheep/Desktop/Gauntlet/Capstone/introspection/src \
   /Users/sheep/Desktop/Gauntlet/Capstone/.venv-introspection/bin/python introspection/scripts/generate_dp_honey_lite_prompts.py
+```
+
+Generate the hard V2 DP-HONEY-lite prompt dataset:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/sheep/Desktop/Gauntlet/Capstone/introspection/src \
+  /Users/sheep/Desktop/Gauntlet/Capstone/.venv-introspection/bin/python introspection/scripts/generate_dp_honey_lite_prompts.py \
+  --template-set hard_v2 \
+  --seed aegis-dp-honey-lite-v2 \
+  --examples-per-template 4 \
+  --readout-width 6
 ```
 
 Extract DP-HONEY-lite readout-window activation features:
@@ -1084,12 +1106,11 @@ Recommended sequence:
 4. Define a promotion rule that weighs average performance, worst-case
    checkpoint performance, and post-hoc discovery risk.
 5. For CIFT-like work, treat `meta_c_10` raw full dual-readout as the current
-   regularized diagnostic target, then use `dp_honey_lite_prompts_v1` to add
-   readout-window activation extraction before testing source-head targets or
-   paper-aligned CCI/CFS scoring. The readout-window artifact now exists; the
-   smoke comparison is wired and positive; the next step is a larger
-   DP-HONEY-lite dataset plus same-dataset static-feature extraction before
-   making any metric claim.
+   regularized diagnostic target. The V1 DP-HONEY-lite readout-window artifact
+   exists and the smoke comparison is wired and positive. The next step is to
+   extract readout-window activations for `dp_honey_lite_prompts_v2`, then run
+   same-dataset static-feature extraction and grouped comparisons before making
+   any metric claim.
 6. Keep registering every dataset, artifact, and machine-readable report in
    `data/lineage.json`.
 

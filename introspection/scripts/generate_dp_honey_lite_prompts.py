@@ -18,10 +18,11 @@ from transformers import AutoTokenizer
 from aegis_introspection.honeytokens import (
     CredentialType,
     DpHoneyLiteExampleSpec,
+    DpHoneyLiteTemplateSet,
     TokenOffset,
     TokenizedText,
     build_dp_honey_lite_dataset,
-    default_dp_honey_lite_templates,
+    dp_honey_lite_templates,
     generate_honeytoken,
     render_honeytoken_prompt,
     write_dp_honey_lite_jsonl,
@@ -48,6 +49,13 @@ class GenerateDpHoneyLitePromptsConfig:
     seed: str
     examples_per_template: int
     readout_width: int
+    template_set: DpHoneyLiteTemplateSet
+
+
+_DEFAULT_OUTPUT_BY_TEMPLATE_SET: dict[DpHoneyLiteTemplateSet, Path] = {
+    "v1": INTROSPECTION_ROOT / "data" / "prompts_dp_honey_lite_v1.jsonl",
+    "hard_v2": INTROSPECTION_ROOT / "data" / "prompts_dp_honey_lite_v2.jsonl",
+}
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -55,8 +63,8 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--output",
         required=False,
-        default=str(INTROSPECTION_ROOT / "data" / "prompts_dp_honey_lite_v1.jsonl"),
     )
+    parser.add_argument("--template-set", required=False, choices=("v1", "hard_v2"), default="v1")
     parser.add_argument("--model-id", required=False, default="Qwen/Qwen3-0.6B")
     parser.add_argument("--revision", required=False, default="main")
     parser.add_argument("--allow-download", action="store_true")
@@ -68,14 +76,17 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def _parse_args(argv: Sequence[str]) -> GenerateDpHoneyLitePromptsConfig:
     namespace = _build_parser().parse_args(argv)
+    template_set = cast(DpHoneyLiteTemplateSet, namespace.template_set)
+    output_path = Path(str(namespace.output)) if namespace.output is not None else _DEFAULT_OUTPUT_BY_TEMPLATE_SET[template_set]
     return GenerateDpHoneyLitePromptsConfig(
-        output_path=Path(namespace.output),
+        output_path=output_path,
         model_id=str(namespace.model_id),
         revision=str(namespace.revision),
         local_files_only=not bool(namespace.allow_download),
         seed=str(namespace.seed),
         examples_per_template=int(namespace.examples_per_template),
         readout_width=int(namespace.readout_width),
+        template_set=template_set,
     )
 
 
@@ -141,7 +152,7 @@ def _example_specs(
 
     specs: list[DpHoneyLiteExampleSpec] = []
     global_index = 0
-    for template in default_dp_honey_lite_templates():
+    for template in dp_honey_lite_templates(template_set=config.template_set):
         for template_index in range(config.examples_per_template):
             credential_type = _credential_type_for_index(global_index)
             honeytoken = generate_honeytoken(
