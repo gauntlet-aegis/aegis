@@ -64,6 +64,25 @@
   .caught b { color: var(--ink); }
   .landed { color: var(--block); font-weight: 700; }
   .empty { color: var(--skip); font-size: 12px; padding: 20px 0; text-align: center; }
+  .card { cursor: pointer; }
+  .timing { margin-left: auto; font-size: 10px; color: var(--skip); font-family: ui-monospace, monospace; }
+  .preout { color: var(--accent); }
+  .io { display: grid; gap: 6px; margin: 8px 0; }
+  .io .lbl { font-size: 9px; text-transform: uppercase; letter-spacing: .08em; color: var(--skip); }
+  .in { font-size: 12px; color: var(--ink); background: var(--panel2); border-radius: 6px;
+    padding: 7px 10px; white-space: pre-wrap; word-break: break-word; max-height: 76px; overflow: hidden;
+    border-left: 2px solid var(--line); }
+  .details { display: none; margin-top: 8px; border-top: 1px dashed var(--line); padding-top: 8px; }
+  .card.open .details { display: block; }
+  .det { font-family: ui-monospace, monospace; font-size: 11px; display: grid;
+    grid-template-columns: 64px 1fr; gap: 4px 10px; padding: 3px 0; }
+  .det .name { color: var(--muted); }
+  .det .name.benign { color: var(--pass); } .det .name.suspicious { color: var(--warn); }
+  .det .name.malicious { color: var(--block); } .det .name.skipped { color: var(--skip); }
+  .det .body { color: var(--ink); word-break: break-word; }
+  .sparks { display: inline-flex; gap: 2px; align-items: flex-end; height: 14px; vertical-align: bottom; }
+  .sparks i { width: 5px; background: var(--accent); border-radius: 1px; display: inline-block; }
+  .hint { font-size: 9px; color: var(--skip); margin-top: 4px; }
 </style>
 </head>
 <body>
@@ -94,12 +113,51 @@ function chip(layer, lr) {
   return `<span class="chip ${v}">${layer}${lr && lr.score!=null ? ":"+(+lr.score).toFixed(2) : ""}</span>`;
 }
 
+function esc(s) { return (s||"").replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])); }
+function fmt(x, d=2) { return (x==null) ? "—" : (+x).toFixed(d); }
+
+function sparks(arr) {
+  if (!arr || !arr.length) return "";
+  const m = Math.max(1e-6, ...arr.map(Math.abs));
+  return `<span class="sparks" title="per-layer CFS">` +
+    arr.map(v => `<i style="height:${Math.max(2, Math.abs(v)/m*14).toFixed(1)}px"></i>`).join("") + `</span>`;
+}
+
+function layerDetail(name, lr) {
+  if (!lr) return `<div class="det"><span class="name skipped">${name}</span><span class="body">—</span></div>`;
+  const d = lr.detail || {};
+  let body;
+  if (name === "cift") {
+    body = d.reason ? d.reason
+      : `score ${fmt(lr.score,3)} / thr ${fmt(lr.threshold,3)} ${sparks(d.per_layer_cfs)}`;
+  } else if (name === "text") {
+    body = d.matched_verbatim ? "verbatim secret in output" : "no verbatim match";
+  } else if (name === "dp_honey") {
+    const hits = d.hits || [];
+    body = hits.length
+      ? hits.map(h => `${h.encoding} frag ${fmt(h.fragment_ratio,2)}${h.exact ? " (exact)" : ""} …${esc(h.token_tail||"")}`).join(", ")
+      : (d.reason || "no leak");
+  } else if (name === "nimbus") {
+    body = `+${fmt(d.i_turn_bits,2)} bits · cum ${fmt(d.i_cum_bits,2)} · ratio ${fmt(d.ratio,2)}`;
+  } else {
+    body = esc(JSON.stringify(d));
+  }
+  const lat = lr.latency_ms != null ? ` · ${(+lr.latency_ms).toFixed(1)}ms` : "";
+  return `<div class="det"><span class="name ${lr.verdict}">${name}</span><span class="body">${body}${lat}</span></div>`;
+}
+
 function render(ev) {
   const mode = ev.mode || "whitebox";
   const feed = feeds[mode] || feeds.whitebox;
   if (!seeded[mode]) { feed.innerHTML = ""; seeded[mode] = true; }
 
   const byLayer = {}; (ev.layers||[]).forEach(l => byLayer[l.layer] = l);
+  const t = ev.timing_ms || {};
+  const preOut = ev.caught_by === "cift";
+  const timing = `${t.total ? Math.round(t.total) : "?"}ms`
+    + (t.forward ? ` · fwd ${Math.round(t.forward)}ms` : "")
+    + (preOut ? ` · <span class="preout">blocked pre-output</span>` : "");
+  const input = ev.untrusted_content_preview || ev.user_query || "";
   const card = document.createElement("div");
   card.className = "card " + ev.action;
   card.innerHTML = `
@@ -107,13 +165,20 @@ function render(ev) {
       <span class="turn">#${ev.turn_index}</span>
       <span class="attack">${ev.attack_label ? "attack:"+ev.attack_label : "benign"}</span>
       <span class="verdict ${ev.action}">${ev.action}</span>
+      <span class="timing">${timing}</span>
     </div>
     <div class="chips">${LAYERS.map(l => chip(l, byLayer[l])).join("")}</div>
-    <div class="out">${(ev.output_preview||"").replace(/</g,"&lt;")}</div>
+    <div class="io">
+      <div><div class="lbl">attacker input</div><div class="in">${esc(input)}</div></div>
+      <div><div class="lbl">model output (post-policy)</div><div class="out">${esc(ev.output_preview)}</div></div>
+    </div>
     <div class="caught">
       ${ev.caught_by ? `caught by <b>${ev.caught_by}</b>` : "no layer fired"}
       ${ev.landed ? ` · <span class="landed">⚠ ATTACK LANDED</span>` : ""}
-    </div>`;
+    </div>
+    <div class="hint">▸ click for per-layer detail</div>
+    <div class="details">${LAYERS.map(l => layerDetail(l, byLayer[l])).join("")}</div>`;
+  card.addEventListener("click", () => card.classList.toggle("open"));
   feed.prepend(card);
 
   if (ev.nimbus) {
