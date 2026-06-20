@@ -26,6 +26,8 @@ The first runtime spine is implemented and CI-enforced:
     honeytoken leaks.
   - `EncodedCanaryDetector` for base64, hex, ROT13, leet, reverse,
     fragmentation, and partial-overlap canary leakage.
+  - `NimbusLeakageDetector` for cumulative, per-session leakage budgeting over
+    registered canary values.
 - A fixture-backed `cift_selector_probe_v0` candidate monitor replay path that
   consumes promoted calibrated CIFT scores without importing research code.
 - A mock OpenAI-compatible proxy surface for `/health`,

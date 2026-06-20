@@ -75,6 +75,35 @@ Exact encoded matches emit `escalate`. Evidence includes canary IDs, hashes,
 encoding names, output spans when available, and overlap ratios, but not raw
 canary values.
 
+## NIMBUS-Lite Cumulative Leakage Budget
+
+`NimbusLeakageDetector` is the first concrete session detector. It tracks
+cumulative leakage evidence for registered canary values across turns in the
+same session. The current estimator is dependency-light and deterministic: it
+compares character n-gram overlap between a protected canary value and the
+model output, converts that overlap into bounded per-turn leakage bits, and
+adds those bits to a per-`(session_id, canary_id)` budget.
+
+Thresholds map cumulative budget ratio to detector recommendations:
+
+```text
+ratio < warn_ratio         -> allow
+warn_ratio <= ratio        -> warn
+sanitize_ratio <= ratio    -> sanitize
+block_ratio <= ratio       -> block
+```
+
+The detector returns component `nimbus`. Evidence includes canary IDs, hashes,
+credential type, source, turn leakage bits, cumulative leakage bits, budget
+ratio, threshold configuration, and aggregate n-gram counts. It does not copy
+raw canary values or model-output text into detector evidence.
+
+This is intentionally NIMBUS-lite, not the full learned InfoNCE/critic
+formulation from the AIS paper. The useful boundary is now in place: later work
+can replace the estimator with a trained critic while preserving the
+`DetectorResult` contract, session store boundary, policy behavior, and audit
+shape.
+
 ## Candidate CIFT Monitor V0
 
 `cift_selector_probe_v0` is the first promoted lab-to-runtime CIFT checkpoint.
@@ -111,5 +140,6 @@ Future branches should add real detectors behind the existing contract:
 - DP-HONEY runtime: register honeytokens and populate `sensitive_spans`.
 - Canary scanners: extend exact model-output scanning to tool arguments and
   streaming outputs.
-- NIMBUS ledger: emit cumulative session risk as a detector result.
+- NIMBUS estimator: replace the deterministic n-gram estimator with a promoted
+  learned critic while preserving the session-detector contract.
 - Tool scanner: inspect normalized tool arguments before dispatch.
