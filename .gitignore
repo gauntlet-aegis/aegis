@@ -1,0 +1,19 @@
+# Python build/test caches
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.eggs/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# DP-HONEY: generated local model artifacts are never committed.
+# Only the curated synthetic fixtures under tests/fixtures/dp_honey/ are tracked.
+/models/

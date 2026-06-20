@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dp-honey"
+version = "0.1.0"
+description = "DP-HONEY: synthetic, non-functional honeytoken generator (DP-noised character bigram). Shape-only decoys for credential-leak detection research."
+readme = "detect/dp_honey/README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Aegis Capstone" }]
+keywords = [
+  "honeytoken",
+  "synthetic",
+  "differential-privacy",
+  "security",
+  "detection",
+]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Security",
+  "Intended Audience :: Developers",
+]
+dependencies = ["numpy>=1.24"]
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+
+[project.scripts]
+dp-honey = "detect.dp_honey.__main__:main"
+
+[project.urls]
+Homepage = "https://github.com/jaynyasg/CapstoneHoney"
+
+[tool.setuptools.packages.find]
+include = ["detect*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
