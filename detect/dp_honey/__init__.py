@@ -38,6 +38,7 @@ from .errors import (
 from .formats import REGISTRY_VERSION, get_format, list_format_slugs, list_formats
 from .grammar import FormatSpec, Literal, Variable
 from .model_io import SCHEMA_VERSION, load_model, model_to_dict, save_model
+from .realism import REPORT_MAX, compute_report
 
 __version__ = "0.1.0"
 
@@ -62,6 +63,9 @@ __all__ = [
     "save_model",
     "load_model",
     "model_to_dict",
+    # realism
+    "compute_report",
+    "REPORT_MAX",
     # errors
     "DPHoneyError",
     "UnknownFormatError",
