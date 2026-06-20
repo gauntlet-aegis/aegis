@@ -50,6 +50,10 @@ class BigramHoneytokenModel:
     ``transitions`` maps a previous state (``START`` or a single variable char) to
     ``{next_char: probability}``. Rows with no positive mass are omitted; sampling
     falls back to a uniform draw over the active segment alphabet for those.
+
+    The stable reuse surface is :meth:`sample`, :meth:`isample`, and
+    ``format_slug``. ``transitions``/``alphabet`` are implementation detail -- the
+    JSON artifact, not this in-memory object, is the cross-team contract.
     """
 
     format_spec: FormatSpec
@@ -206,9 +210,10 @@ def build_model(
 ) -> BigramHoneytokenModel:
     """Convenience: generate a synthetic corpus for *fmt* and train on it.
 
-    The corpus stream and the Laplace-noise stream are independent children of
-    ``train_seed``, so the whole build is deterministic in ``train_seed`` without
-    correlating the two sources of randomness.
+    The corpus stream is a spawned child of ``train_seed`` and the Laplace-noise
+    stream (in :func:`train_model`) is seeded from ``train_seed`` directly. The two
+    RNG states are independent, so the whole build is deterministic in
+    ``train_seed`` without correlating the two sources of randomness.
     """
     spec = fmt if isinstance(fmt, FormatSpec) else get_format(fmt)
     corpus_seed = np.random.SeedSequence(train_seed).spawn(1)[0]

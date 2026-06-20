@@ -129,3 +129,22 @@ def test_transition_rows_are_normalized():
     for state, row in model.transitions.items():
         assert abs(sum(row.values()) - 1.0) < 1e-6, state
     assert START in model.transitions  # the first-char distribution must exist
+
+
+def test_generate_honeytokens_with_prebuilt_model_matches_sample():
+    model = build_model("github-ghp", epsilon=1.0, clip=1.0, corpus_size=30, train_seed=4)
+    tokens = generate_honeytokens(model=model, count=3, sample_seed=9)
+    assert tokens == model.sample(3, seed=9)
+    spec = get_format("github-ghp")
+    assert all(spec.validate(t) for t in tokens)
+
+
+def test_generate_honeytokens_requires_a_source():
+    with pytest.raises(ValueError):
+        generate_honeytokens()
+
+
+def test_negative_count_raises_value_error():
+    model = build_model("github-ghp", corpus_size=10, train_seed=0)
+    with pytest.raises(ValueError):
+        model.sample(-1, seed=0)

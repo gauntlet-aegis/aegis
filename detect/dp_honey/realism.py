@@ -25,6 +25,10 @@ from .errors import CountLimitError
 # Practical cap for `report`: metrics require materializing the whole batch.
 REPORT_MAX = 5000
 
+# Floor for per-character probability when scoring EXTERNAL tokens the model
+# assigns ~0 mass; self-generated tokens never hit it. Keeps log-likelihood finite.
+LOG_PROB_FLOOR = 1e-12
+
 SAFETY_NOTE = (
     "Sanity metrics for a synthetic, shape-only generator. NOT proof that tokens "
     "are indistinguishable from real credentials, and not derived from real secrets."
@@ -106,14 +110,18 @@ def _mean_char_log_likelihood(model: BigramHoneytokenModel, tokens: list[str]) -
             prev = START
             for char in chunk:
                 probability = _char_probability(model, prev, char, segment.alphabet)
-                total_log += math.log(max(probability, 1e-12))
+                total_log += math.log(max(probability, LOG_PROB_FLOOR))
                 total_chars += 1
                 prev = char
     return (total_log / total_chars) if total_chars else 0.0
 
 
 def _char_probability(model: BigramHoneytokenModel, state: str, char: str, alphabet: str) -> float:
-    """The model's effective P(char | state) restricted to *alphabet*."""
+    """The model's effective P(char | state) restricted to *alphabet*.
+
+    Must mirror ``BigramHoneytokenModel._sample_char``'s masking + R8 uniform
+    fallback so the likelihood matches the sampler's actual distribution.
+    """
     row = model.transitions.get(state, {})
     masked_sum = sum(row.get(symbol, 0.0) for symbol in alphabet)
     if masked_sum > 0.0:

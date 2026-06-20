@@ -124,15 +124,19 @@ load. The canonical form is reproducible from its training inputs (no timestamp)
 | ----- | ---- | ------- |
 | identity | `schema_version`, `generator` | schema + producing package/version |
 | format | `format.slug`, `format.registry_version`, `format.spec_hash`, `format.spec_snapshot` | format identity + drift detection |
-| privacy | `privacy.epsilon`, `privacy.clip`, `privacy.corpus_size`, `privacy.train_seed`, `privacy.mechanism` | DP/training settings |
+| privacy | `privacy.epsilon`, `privacy.clip`, `privacy.corpus_size`, `privacy.train_seed`, `privacy.trained_at` (always `null` in v1), `privacy.mechanism` | DP/training settings |
 | alphabet | `alphabet.start_token`, `alphabet.symbols` | variable-character alphabet |
 | transitions | `transitions` | normalized `P(next \| prev)` rows |
 | safety | `safety.synthetic_only`, `safety.provider_valid`, `safety.note` | provenance + disclaimer |
 
 Loading rejects (with a typed error, before any generation): bad JSON, missing
 fields, unknown `schema_version`, **format snapshot/hash drift**, unknown format
-slug, invalid alphabet membership, and non-finite / negative / non-normalized
-transition probabilities.
+slug, invalid alphabet membership, out-of-range privacy metadata, and non-finite /
+negative / non-normalized transition probabilities.
+
+> `inspect-model` is **lenient** and always exits 0 — it reports
+> `snapshot_status: OK | DRIFT | UNKNOWN_FORMAT` for debugging. Use `validate`
+> (which exits nonzero on any problem) as the pass/fail gate in scripts.
 
 ---
 

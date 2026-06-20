@@ -93,3 +93,19 @@ def test_report_metadata_is_synthetic_only():
     assert safety["synthetic_only"] is True
     assert safety["provider_valid"] is False
     assert "not" in safety["note"].lower()
+
+
+def test_validity_rate_reflects_invalid_tokens():
+    model = _model()
+    batch = model.sample(5, seed=1) + ["not-a-valid-token", "also-bad"]
+    report = compute_report(batch, model)
+    assert report["count"] == 7
+    assert report["validity_rate"] == pytest.approx(5 / 7)
+    # Likelihood is computed over the valid tokens only and stays finite.
+    assert math.isfinite(report["avg_log_likelihood"])
+
+
+def test_char_entropy_exact_value():
+    model = _model()
+    # Two equally likely symbols across the batch -> exactly 1 bit.
+    assert compute_report(["AB"], model)["char_entropy_bits"] == pytest.approx(1.0)

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import copy
 import json
 from pathlib import Path
 
@@ -132,3 +131,15 @@ def test_save_force_overwrites(tmp_path):
     save_model(model, path, force=True)  # must not raise
     # File is still valid, canonical JSON.
     json.loads(path.read_text(encoding="utf-8"))
+
+
+@pytest.mark.parametrize(
+    "field, value",
+    [("epsilon", 0.0), ("epsilon", -1.0), ("clip", 0.0), ("clip", -2.0), ("corpus_size", -3)],
+)
+def test_out_of_range_privacy_metadata_raises(field, value):
+    # Load must enforce the same bounds train_model does (save/load agree).
+    data = _valid_dict()
+    data["privacy"][field] = value
+    with pytest.raises(ModelSchemaError):
+        load_model(data)

@@ -40,10 +40,12 @@ ArtifactSource = Union[str, Path, dict]
 
 def model_to_dict(model: BigramHoneytokenModel) -> dict:
     """Serialize *model* into the canonical artifact dictionary."""
+    from . import __version__  # local import avoids a package-init cycle
+
     spec = model.format_spec
     return {
         "schema_version": SCHEMA_VERSION,
-        "generator": {"package": "detect.dp_honey", "version": "0.1.0"},
+        "generator": {"package": "detect.dp_honey", "version": __version__},
         "format": {
             "slug": spec.slug,
             "registry_version": model.registry_version,
@@ -147,6 +149,16 @@ def load_model(source: ArtifactSource) -> BigramHoneytokenModel:
     )
     _validate_transitions(transitions, set(symbols), start_token)
 
+    # Privacy metadata must satisfy the same bounds train_model enforces, so the
+    # save and load paths agree on what a valid model is (fail closed, KTD4).
+    epsilon = _num(privacy, "epsilon")
+    clip = _num(privacy, "clip")
+    corpus_size = _int(privacy, "corpus_size")
+    train_seed = _int(privacy, "train_seed")
+    _require(epsilon > 0.0, f"epsilon must be > 0, got {epsilon}")
+    _require(clip > 0.0, f"clip must be > 0, got {clip}")
+    _require(corpus_size >= 0, f"corpus_size must be >= 0, got {corpus_size}")
+
     return BigramHoneytokenModel(
         format_spec=live,
         alphabet=live.variable_alphabet(),
@@ -154,10 +166,10 @@ def load_model(source: ArtifactSource) -> BigramHoneytokenModel:
             state: {char: float(prob) for char, prob in row.items()}
             for state, row in transitions.items()
         },
-        epsilon=_num(privacy, "epsilon"),
-        clip=_num(privacy, "clip"),
-        corpus_size=_int(privacy, "corpus_size"),
-        train_seed=_int(privacy, "train_seed"),
+        epsilon=epsilon,
+        clip=clip,
+        corpus_size=corpus_size,
+        train_seed=train_seed,
         registry_version=str(_field(fmt, "registry_version")),
         spec_hash=stored_hash,
     )

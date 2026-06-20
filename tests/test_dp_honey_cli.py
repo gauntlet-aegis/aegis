@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from detect.dp_honey import get_format, load_model
+from detect.dp_honey import build_model, get_format, load_model, model_to_dict
 from detect.dp_honey.__main__ import GENERATE_MAX, build_parser, main
 from detect.dp_honey.realism import REPORT_MAX
 
@@ -134,3 +134,63 @@ def test_generate_emits_safety_banner_on_stderr(capsys):
 
 def test_help_text_mentions_synthetic():
     assert "synthetic" in build_parser().format_help().lower()
+
+
+def _write_artifact(path: Path, mutate=None) -> Path:
+    data = model_to_dict(build_model("github-ghp", corpus_size=15, train_seed=1))
+    if mutate is not None:
+        mutate(data)
+    path.write_text(json.dumps(data), encoding="utf-8")
+    return path
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda d: d["format"].__setitem__("spec_hash", "sha256:" + "0" * 64),  # drift
+        lambda d: d.__setitem__("schema_version", "999"),  # unknown schema
+        lambda d: d["format"].__setitem__("slug", "not-a-real-format"),  # unknown slug
+    ],
+)
+def test_validate_exits_nonzero_for_typed_errors(tmp_path, mutate, capsys):
+    art = _write_artifact(tmp_path / "a.json", mutate)
+    assert main(["validate", "--model", str(art)]) == 1
+    assert "error" in capsys.readouterr().err.lower()
+
+
+def test_inspect_model_reports_drift(tmp_path, capsys):
+    art = _write_artifact(tmp_path / "a.json", lambda d: d["format"].__setitem__("spec_hash", "sha256:" + "0" * 64))
+    assert main(["inspect-model", "--model", str(art)]) == 0  # lenient: still exits 0
+    assert "DRIFT" in capsys.readouterr().out
+
+
+def test_inspect_model_reports_unknown_format(tmp_path, capsys):
+    art = _write_artifact(tmp_path / "a.json", lambda d: d["format"].__setitem__("slug", "nope"))
+    assert main(["inspect-model", "--model", str(art)]) == 0
+    assert "UNKNOWN_FORMAT" in capsys.readouterr().out
+
+
+def test_oversized_count_is_checked_before_model_load(tmp_path, capsys):
+    missing = tmp_path / "does-not-exist.json"
+    rc = main(["generate", "--model", str(missing), "--count", str(GENERATE_MAX + 1)])
+    assert rc == 1
+    # The count cap fires before the (missing) artifact is read (AE6 ordering).
+    assert str(GENERATE_MAX) in capsys.readouterr().err
+
+
+def test_list_formats_json_includes_safety_notes(capsys):
+    assert main(["list-formats", "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    slugs = {item["slug"] for item in payload}
+    for slug in REQUIRED_SLUGS:
+        assert slug in slugs
+    for item in payload:
+        assert item["safety_note"]
+        assert item["provider_valid"] is False
+
+
+def test_preview_and_report_emit_safety_banner(capsys):
+    assert main(["preview-corpus", "--format", "github-ghp", "--count", "1", "--seed", "0"]) == 0
+    assert "synthetic" in capsys.readouterr().err.lower()
+    assert main(["report", "--format", "github-ghp", "--count", "5", "--seed", "0"]) == 0
+    assert "synthetic" in capsys.readouterr().err.lower()
