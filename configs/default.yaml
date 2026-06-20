@@ -1,0 +1,23 @@
+# Sentinel — white-box configuration (hosts Qwen2.5-1.5B on MPS for CIFT hooks).
+mode: whitebox
+model_id: Qwen/Qwen2.5-1.5B-Instruct
+device: mps
+max_new_tokens: 256
+host: 127.0.0.1
+port: 8000
+event_dir: .aegis/events
+
+cift:
+  stats_path: data/cift/stats.pt
+  probe_path: data/cift/probe.pt
+  threshold: 0.5
+
+dp_honey:
+  models_path: data/honey/models.pkl
+  threshold_path: data/honey/threshold.json
+  epsilon: 1.0
+  alpha: 0.05
+
+nimbus:
+  budget_bits: 4.66   # calibrated by scripts/train_nimbus.py (benign max 2.33, long-drip median 8.51)
+  n_neg: 63
