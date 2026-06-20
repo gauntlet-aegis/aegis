@@ -158,7 +158,10 @@ def _emit_safety_banner() -> None:
 
 def _read_input(path: Optional[str]) -> str:
     if path:
-        return Path(path).read_text(encoding="utf-8")
+        try:
+            return Path(path).read_text(encoding="utf-8")
+        except OSError as exc:
+            raise DPHoneyError(f"could not read input {path}: {exc}") from exc
     return sys.stdin.read()
 
 

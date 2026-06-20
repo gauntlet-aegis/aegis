@@ -29,6 +29,7 @@ These belong to other teammates / future work and are **not** implemented here:
 - **Tool-call** scanning
 - Provider-valid credential generation
 - Real secret corpus ingestion
+- Enterprise-grade secret scanning beyond the registry-derived detector
 
 ---
 
@@ -80,11 +81,35 @@ python -m detect.dp_honey validate --model models/ghp.json
 
 # 8. Compute realism / sanity metrics for a batch (JSON)
 python -m detect.dp_honey report --format github-ghp --count 100 --seed 1
+
+# 9. Scan text for registered, scannable secret shapes (no matched values echoed)
+python -m detect.dp_honey scan --file suspect.txt
+
+# 10. Scan and replace each detected span with a matching synthetic decoy
+python -m detect.dp_honey auto-decoy --file suspect.txt --seed 1
 ```
 
 `generate` is capped at 10000 (it streams one token at a time); `report` is
 capped at 5000 (metrics require materializing the whole batch). Oversized counts
 exit nonzero *before* any generation work begins.
+
+## Scanner & auto-decoy
+
+`scan` derives detection patterns from the live registry, confirms candidates
+with each format's `validate()` method, and prints JSON findings shaped as
+`{format,start,end,confidence}`. By default, it does **not** echo matched input
+values. `--show-matches` is the explicit opt-in for debugging and should be
+handled carefully.
+
+`auto-decoy` runs the same scan and generates one matching synthetic decoy per
+finding, then emits `swapped_text` with detected spans replaced. It is a helper,
+not a sanitizer: only detected scannable spans are replaced, and unrelated input
+text is preserved.
+
+Prefix-less generic formats such as `aws-secret-access-key`, `oauth-bearer`, and
+`database-password` are excluded from scanning to avoid noisy false positives.
+Checksum-confirmed formats report `high` confidence; structural matches report
+`medium`.
 
 ## Web UI
 

@@ -157,6 +157,16 @@ def test_run_report_metadata_is_synthetic_only():
     assert report["safety"]["provider_valid"] is False
 
 
+def test_service_run_scan_and_auto_decoy():
+    tok = get_format("github-ghp").random_example(__import__("numpy").random.default_rng(1))
+    text = f"TOKEN={tok}"
+    findings = service.run_scan(text)["findings"]
+    assert findings and findings[0]["format"] == "github-ghp"
+    result = service.run_auto_decoy(text, seed=1)
+    assert tok not in result["swapped_text"]
+    assert len(result["decoys"]) == 1
+
+
 def test_launcher_parser_defaults_to_localhost():
     from detect.dp_honey.webui.__main__ import build_parser
 

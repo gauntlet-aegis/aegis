@@ -7,23 +7,13 @@ from pathlib import Path
 
 import pytest
 
-from detect.dp_honey import build_model, get_format, load_model, model_to_dict
+from detect.dp_honey import build_model, get_format, list_format_slugs, load_model, model_to_dict
 from detect.dp_honey.__main__ import GENERATE_MAX, build_parser, main
 from detect.dp_honey.realism import REPORT_MAX
 
 GOLDEN = Path(__file__).resolve().parent / "fixtures" / "dp_honey" / "golden_model.json"
 
-REQUIRED_SLUGS = [
-    "aws-access-key-id",
-    "aws-secret-access-key",
-    "oauth-bearer",
-    "generic-sk",
-    "database-password",
-    "jwt",
-    "ssh-private-key",
-    "stripe-sk-live",
-    "github-ghp",
-]
+REQUIRED_SLUGS = list_format_slugs()
 
 
 def test_list_formats_includes_every_slug(capsys):
@@ -233,3 +223,9 @@ def test_cli_auto_decoy_emits_swapped_text(tmp_path, capsys):
     payload = json.loads(capsys.readouterr().out)
     assert len(payload["decoys"]) == 1
     assert token not in payload["swapped_text"]
+
+
+def test_cli_scan_missing_file_exits_nonzero(tmp_path, capsys):
+    missing = tmp_path / "missing.txt"
+    assert main(["scan", "--file", str(missing)]) == 1
+    assert "error" in capsys.readouterr().err.lower()

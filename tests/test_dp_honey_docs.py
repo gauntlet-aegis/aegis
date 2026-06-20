@@ -23,9 +23,11 @@ CLI_COMMANDS = [
     "inspect-model",
     "validate",
     "report",
+    "scan",
+    "auto-decoy",
 ]
 
-OUT_OF_SCOPE_KEYWORDS = ["scanner", "calibration", "accounting", "gateway", "tool-call"]
+OUT_OF_SCOPE_KEYWORDS = ["calibration", "accounting", "gateway", "tool-call"]
 
 # Matches a compatibility-matrix row whose first cell is a backtick-wrapped slug.
 _ROW = re.compile(r"(?m)^\|\s*`([a-z0-9-]+)`\s*\|.*$")

@@ -45,3 +45,16 @@ def test_http_index_serves_html_with_safety_banner():
     resp = _client().get("/")
     assert resp.status_code == 200
     assert "NOT real" in resp.text
+
+
+def test_http_scan_and_auto_decoy():
+    tok = __import__("detect.dp_honey", fromlist=["get_format"]).get_format("github-ghp").random_example(
+        __import__("numpy").random.default_rng(3)
+    )
+    client = _client()
+    scan_resp = client.post("/api/scan", json={"text": f"k={tok}"})
+    assert scan_resp.status_code == 200
+    assert scan_resp.json()["findings"][0]["format"] == "github-ghp"
+    auto_resp = client.post("/api/auto-decoy", json={"text": f"k={tok}", "seed": 1})
+    assert auto_resp.status_code == 200
+    assert tok not in auto_resp.json()["swapped_text"]

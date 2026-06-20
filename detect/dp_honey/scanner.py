@@ -15,7 +15,7 @@ from .formats import get_format, list_formats
 from .grammar import Checksum, FormatSpec, Literal, Variable
 
 _BOUNDARY_BEFORE = r"(?<![A-Za-z0-9_./+-])"
-_BOUNDARY_AFTER = r"(?![A-Za-z0-9_./+-])"
+_BOUNDARY_AFTER = r"(?![A-Za-z0-9_/+-])"
 _CHECKSUM_ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 _CONFIDENCE_RANK = {"high": 2, "medium": 1, "low": 0}
 
@@ -68,7 +68,13 @@ def auto_decoy(text: str, *, seed: int = 0) -> dict[str, object]:
     findings = scan(text)
     decoys: list[str] = []
     for index, finding in enumerate(findings):
-        decoy = generate_honeytokens(str(finding["format"]), count=1, sample_seed=seed + index)[0]
+        original = text[int(finding["start"]) : int(finding["end"])]
+        decoy = original
+        attempt = 0
+        while decoy == original and attempt < 1000:
+            sample_seed = seed + (index * 1000) + attempt
+            decoy = generate_honeytokens(str(finding["format"]), count=1, sample_seed=sample_seed)[0]
+            attempt += 1
         decoys.append(decoy)
 
     swapped = text

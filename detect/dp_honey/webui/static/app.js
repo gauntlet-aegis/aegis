@@ -5,6 +5,7 @@ const COMMANDS = [
   { id: "preview-corpus", label: "Preview corpus" },
   { id: "generate", label: "Generate" },
   { id: "report", label: "Report" },
+  { id: "scan", label: "Scan & auto-decoy" },
   { id: "train", label: "Train" },
   { id: "inspect", label: "Inspect model" },
   { id: "validate", label: "Validate" },
@@ -113,6 +114,12 @@ function buildForm(cmd) {
     form.append(field("seed", numInput("seed", 0)));
     const force = el("input", { name: "force", type: "checkbox" });
     form.append(field("overwrite", force));
+  } else if (cmd === "scan") {
+    const ta = el("textarea", { name: "text", rows: "8", style: "width:100%; font-family:ui-monospace,monospace;" });
+    const wrap = el("label", {}, "paste text to scan");
+    wrap.append(ta);
+    form.append(wrap);
+    form.append(field("seed", numInput("seed", 1)));
   } else if (needsModelOnly) {
     form.append(field("model", el("select", { name: "model" }, ...modelOptions())));
   }
@@ -146,6 +153,16 @@ async function runCommand(cmd, form) {
       setOutput(tokenList(tokens));
     } else if (cmd === "report") {
       setOutput(jsonBlock(await api("/api/report", body)));
+    } else if (cmd === "scan") {
+      const result = await api("/api/auto-decoy", body);
+      const lines = result.findings.map((f) => `${f.format}  [${f.start}-${f.end}]  ${f.confidence}`);
+      const out = el("div", {});
+      out.append(el("div", {}, `${result.findings.length} finding(s) — synthetic decoys below`));
+      out.append(el("pre", {}, lines.join("\n") || "no secrets detected"));
+      out.append(el("pre", {}, result.decoys.join("\n")));
+      out.append(el("div", {}, "swapped text"));
+      out.append(el("pre", {}, result.swapped_text));
+      setOutput(out);
     } else if (cmd === "train") {
       const res = await api("/api/train", body);
       await refreshModels();

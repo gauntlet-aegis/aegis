@@ -13,6 +13,7 @@ from typing import Optional
 
 import numpy as np
 
+from .. import scanner
 from ..__main__ import GENERATE_MAX
 from ..bigram import (
     DEFAULT_CLIP,
@@ -141,6 +142,16 @@ def run_report(params: dict, models_dir: Optional[Path] = None) -> dict:
         max_repair_attempts=int(params.get("max_attempts", DEFAULT_MAX_REPAIR_ATTEMPTS)),
     )
     return compute_report(tokens, model)
+
+
+def run_scan(text: str) -> dict:
+    """Scan text and return SAFE-1 findings without matched values."""
+    return {"findings": scanner.scan(text)}
+
+
+def run_auto_decoy(text: str, *, seed: int = 0) -> dict:
+    """Scan text and return matching decoys plus swapped text."""
+    return scanner.auto_decoy(text, seed=seed)
 
 
 def run_train(params: dict, models_dir: Optional[Path] = None) -> dict:

@@ -6,6 +6,7 @@ import numpy as np
 
 from detect.dp_honey import get_format
 from detect.dp_honey import scanner
+from detect.dp_honey.bigram import generate_honeytokens
 
 
 def _example(slug: str, seed: int = 0) -> str:
@@ -42,6 +43,12 @@ def test_scan_of_plain_text_is_empty():
     assert scanner.scan("nothing secret here, just words") == []
 
 
+def test_scan_allows_sentence_punctuation_after_token():
+    ghp = _example("github-ghp", 6)
+    findings = scanner.scan(f"token: {ghp}.")
+    assert findings and findings[0]["format"] == "github-ghp"
+
+
 def test_auto_decoy_generates_matching_valid_decoys_and_swaps():
     ghp = _example("github-ghp", 7)
     text = f"export TOKEN={ghp}"
@@ -60,3 +67,10 @@ def test_auto_decoy_is_deterministic():
     a = scanner.auto_decoy(f"a {ghp} b", seed=2)
     b = scanner.auto_decoy(f"a {ghp} b", seed=2)
     assert a == b
+
+
+def test_auto_decoy_avoids_reusing_identical_generated_token():
+    ghp = generate_honeytokens("github-ghp", count=1, sample_seed=1)[0]
+    result = scanner.auto_decoy(ghp, seed=1)
+    assert result["decoys"][0] != ghp
+    assert result["swapped_text"] != ghp

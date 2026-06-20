@@ -41,6 +41,14 @@ def create_app() -> FastAPI:
     def api_report(body: dict) -> dict:
         return service.run_report(body)
 
+    @app.post("/api/scan")
+    def api_scan(body: dict) -> dict:
+        return service.run_scan(body.get("text", ""))
+
+    @app.post("/api/auto-decoy")
+    def api_auto_decoy(body: dict) -> dict:
+        return service.run_auto_decoy(body.get("text", ""), seed=int(body.get("seed", 0)))
+
     @app.post("/api/train")
     def api_train(body: dict) -> dict:
         return service.run_train(body)
