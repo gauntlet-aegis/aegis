@@ -231,6 +231,30 @@
       "family_count": 6
     },
     {
+      "id": "dp_honey_runtime_prompts_v4_3_sealed",
+      "path": "introspection/data/prompts_dp_honey_runtime_v4_3_sealed.jsonl",
+      "sha256": "8cd1da7933a481dd7da4c203a443de36a2b5df6091ea435f4d04856bd460890c",
+      "purpose": "Sealed runtime-DP-HONEY V4.3 raw holdout dataset with fresh scenario families, merged Aegis canary generation, span metadata, and a no-model-feedback seal.",
+      "label_counts": {
+        "benign": 48,
+        "secret_present_safe": 48,
+        "exfiltration_intent": 48
+      },
+      "family_count": 6
+    },
+    {
+      "id": "dp_honey_runtime_v4_3_sealed_selector_windows",
+      "path": "introspection/data/prompts_dp_honey_runtime_v4_3_sealed_selector_windows.jsonl",
+      "sha256": "2422dcd6d64d018dab4b6a2b7e0d286f7cc95a365deee38c22c77e6197e86cec",
+      "purpose": "Sealed runtime-DP-HONEY V4.3 selector-window holdout derivative whose readout window matches the V4.1 selected-field and selected-mode CIFT geometry.",
+      "label_counts": {
+        "benign": 48,
+        "secret_present_safe": 48,
+        "exfiltration_intent": 48
+      },
+      "family_count": 6
+    },
+    {
       "id": "runtime_turns_dp_honey_lite_v3_selector_windows_v1",
       "path": "introspection/data/runtime_turns_dp_honey_lite_v3_selector_windows.jsonl",
       "sha256": "f4c103cec14813f317af7dfdf8213127b65cbe2223f9b6f44f295e0e4ac823fe",
@@ -383,6 +407,14 @@
       "dataset_id": "dp_honey_runtime_v4_1_selector_windows",
       "model_id": "Qwen/Qwen3-0.6B",
       "feature_count": 1024
+    },
+    {
+      "id": "qwen3_0_6b_dp_honey_runtime_v4_3_sealed_selector_windows_v1",
+      "path": "introspection/data/activations/qwen3_0_6b_dp_honey_runtime_v4_3_sealed_selector_windows.pt",
+      "sha256": "a1fa03bb4db610dbc3e23ba30fc37895eab404b2dfd433362c64aecc0bf66fc0",
+      "dataset_id": "dp_honey_runtime_v4_3_sealed_selector_windows",
+      "model_id": "Qwen/Qwen3-0.6B",
+      "feature_count": 29
     }
   ],
   "reports": [
@@ -1071,6 +1103,22 @@
       "path": "introspection/data/reports/dp_honey_runtime_v4_1_selector_window_progress_2026-06-21.md",
       "sha256": "ef849868283a7083a62438c58b86b52e5f6d08342db600a35804245cc165127f",
       "dataset_id": "dp_honey_runtime_v4_1_selector_windows",
+      "artifact_id": "cift_qwen3_0_6b_dp_honey_runtime_v4_1_selector_window_layer_15_v1",
+      "evaluation_strategy": "milestone_documentation"
+    },
+    {
+      "id": "dp_honey_runtime_v4_3_sealed_selector_window_holdout_readout_window_layer_15_v1",
+      "path": "introspection/data/reports/dp_honey_runtime_v4_3_sealed_selector_window_holdout_readout_window_layer_15_v1.json",
+      "sha256": "960f60ef5f79fd2ccf6a3d0bc9430f02a324cb949693e30916bcf0bff7bfb5e5",
+      "dataset_id": "dp_honey_runtime_v4_3_sealed_selector_windows",
+      "artifact_id": "cift_qwen3_0_6b_dp_honey_runtime_v4_1_selector_window_layer_15_v1",
+      "evaluation_strategy": "one_shot_frozen_bundle_holdout"
+    },
+    {
+      "id": "dp_honey_runtime_v4_3_sealed_selector_window_holdout_progress_2026_06_21",
+      "path": "introspection/data/reports/dp_honey_runtime_v4_3_sealed_selector_window_holdout_progress_2026-06-21.md",
+      "sha256": "3c8c58d6f93e3167a9887be93885a7925f01b80c476c63e8ff2980c3d5a7cbbb",
+      "dataset_id": "dp_honey_runtime_v4_3_sealed_selector_windows",
       "artifact_id": "cift_qwen3_0_6b_dp_honey_runtime_v4_1_selector_window_layer_15_v1",
       "evaluation_strategy": "milestone_documentation"
     }

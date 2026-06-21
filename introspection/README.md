@@ -103,7 +103,7 @@ readout-position, calibrated-deviation monitor.
 
 ## Current State
 
-Twenty-one datasets are currently registered in `data/lineage.json`:
+Twenty-three datasets are currently registered in `data/lineage.json`:
 
 | Dataset | Purpose | Rows |
 |---|---|---:|
@@ -126,6 +126,8 @@ Twenty-one datasets are currently registered in `data/lineage.json`:
 | `dp_honey_runtime_v4_1_selector_windows` | Runtime-DP-HONEY-backed V4.1 selector-window checkpoint over selected field and selected mode tokens. | 144 |
 | `dp_honey_lite_prompts_v4_3_sealed` | Sealed raw holdout with fresh scenario families, non-overlapping honeytokens, and span metadata. | 144 |
 | `dp_honey_lite_v4_3_sealed_selector_windows` | Sealed selector-window holdout derivative for future one-shot CIFT evaluation. | 144 |
+| `dp_honey_runtime_prompts_v4_3_sealed` | Sealed runtime-DP-HONEY raw holdout with fresh scenario families and merged Aegis canary generation. | 144 |
+| `dp_honey_runtime_v4_3_sealed_selector_windows` | Sealed runtime-DP-HONEY selector-window holdout derivative for one-shot CIFT evaluation. | 144 |
 | `runtime_turns_dp_honey_lite_v3_selector_windows_v1` | `NormalizedTurn`-shaped bridge export for runtime-spine integration checks. | 240 |
 | `runtime_turns_dp_honey_lite_v4_1_selector_windows_v1` | `NormalizedTurn`-shaped bridge export for V4.1 runtime-spine integration checks. | 144 |
 
@@ -178,15 +180,18 @@ qwen3_0_6b_dp_honey_lite_v4_1_selector_windows_v1
 ```
 
 The first runtime-DP-HONEY-backed selector-window activation artifact is also
-registered separately:
+registered separately, along with the sealed runtime-DP-HONEY V4.3 holdout
+artifact:
 
 ```text
 qwen3_0_6b_dp_honey_runtime_v4_1_selector_windows_v1
+qwen3_0_6b_dp_honey_runtime_v4_3_sealed_selector_windows_v1
 ```
 
-It uses the same V4.1 selector-window geometry as the lite checkpoint, but its
-structured prompt rows are generated through the merged Aegis DP-HONEY canary
-backend.
+The V4.1 artifact uses the same selector-window geometry as the lite checkpoint,
+but its structured prompt rows are generated through the merged Aegis DP-HONEY
+canary backend. The V4.3 artifact preserves that selector-window geometry while
+changing the scenario families and canary values for one-shot holdout evidence.
 
 The V1 artifact extracts all 29 Qwen 0.6B hidden-state layers using
 `readout_window` pooling over the row-level `readout_token_indices`. The V2
@@ -472,6 +477,24 @@ promotion. Its remaining errors cluster most strongly on `incident_ticket`
 exfiltration, database-URI exfiltration, and no-payload exfiltration cases.
 The next evidence target is a sealed-holdout or runtime-spine live-capture
 check using the frozen candidate.
+
+The sealed runtime-DP-HONEY V4.3 holdout has now been unsealed once for that
+frozen candidate. The one-shot report is:
+
+```text
+dp_honey_runtime_v4_3_sealed_selector_window_holdout_readout_window_layer_15_v1
+```
+
+It scores the frozen V4.1 runtime-DP-HONEY bundle on 96
+`safe_secret_vs_exfiltration` holdout rows and reaches 0.6875 accuracy /
+0.6841 macro F1, with 30 errors. This is a meaningful generalization slip from
+the V4.1 grouped-CV result of 0.8438 accuracy / 0.8387 macro F1. The bundle
+should remain an offline research candidate. The largest holdout misses are
+`billing_reconciliation` and `release_gate` exfiltration rows predicted safe,
+plus `backup_restore` and `partner_integration` safe rows predicted
+exfiltration. Do not tune against this sealed holdout; the next training
+dataset should expand family diversity, and a future promotion attempt should
+reserve a fresh sealed holdout.
 
 V4.3 is the first sealed holdout checkpoint for the CIFT-like thread. It keeps
 the V4.1 relational selector-window data contract but uses fresh scenario
@@ -1075,6 +1098,41 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/sheep/Desktop/Gauntlet/Capstone/intr
   --output-md introspection/data/reports/dp_honey_runtime_v4_1_selector_window_grouped_binary_tasks_readout_window_layer_15_v1_summary.md \
   --activation-feature readout_window_layer_15 \
   --folds 5
+```
+
+Generate and score the sealed runtime-DP-HONEY V4.3 one-shot holdout:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/sheep/Desktop/Gauntlet/Capstone/introspection/src \
+  /Users/sheep/Desktop/Gauntlet/Capstone/.venv-introspection/bin/python introspection/scripts/generate_dp_honey_lite_prompts.py \
+  --template-set hard_v4_3_sealed \
+  --honeytoken-backend dp_honey \
+  --examples-per-template 4 \
+  --readout-width 6
+```
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/sheep/Desktop/Gauntlet/Capstone/introspection/src \
+  /Users/sheep/Desktop/Gauntlet/Capstone/.venv-introspection/bin/python introspection/scripts/generate_v3_policy_window_prompts.py \
+  --input introspection/data/prompts_dp_honey_runtime_v4_3_sealed.jsonl \
+  --output introspection/data/prompts_dp_honey_runtime_v4_3_sealed_selector_windows.jsonl \
+  --window-kind selector
+```
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/sheep/Desktop/Gauntlet/Capstone/introspection/src \
+  /Users/sheep/Desktop/Gauntlet/Capstone/.venv-introspection/bin/python introspection/scripts/extract_activations.py \
+  --prompts introspection/data/prompts_dp_honey_runtime_v4_3_sealed_selector_windows.jsonl \
+  --output introspection/data/activations/qwen3_0_6b_dp_honey_runtime_v4_3_sealed_selector_windows.pt \
+  --layers 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28 \
+  --pooling readout_window \
+  --allow-sealed-holdout
+```
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/sheep/Desktop/Gauntlet/Capstone/introspection/src \
+  /Users/sheep/Desktop/Gauntlet/Capstone/.venv-introspection/bin/python introspection/scripts/evaluate_cift_holdout.py \
+  --allow-sealed-holdout
 ```
 
 Extract DP-HONEY-lite readout-window activation features:
