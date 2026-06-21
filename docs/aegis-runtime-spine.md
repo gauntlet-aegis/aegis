@@ -150,15 +150,22 @@ It reuses the same hidden-state pooling code as the offline activation
 extraction scripts and supports feature keys such as `readout_window_layer_15`.
 It currently expects the runtime bridge shape used by the synthetic datasets:
 one rendered-prompt user message plus `metadata["cift"]["readout_token_indices"]`
-for readout-window features. Broader chat-template rendering remains a separate
-model-hosting concern.
+for readout-window features.
+
+`aegis_introspection.runtime_cift_model_host.RuntimeCiftModelHost` wraps that
+connector in the first self-hosted model-host boundary. It lazy-loads a
+`transformers` causal LM, renders either a pre-rendered prompt or tokenizer
+chat-template prompt, serializes hidden-state forward passes, and then hands the
+feature vector back through the same `CiftFeatureVectorAnnotator` protocol.
+Generation remains a provider concern; this host only owns activation feature
+extraction.
 
 ## Follow-Up Integration
 
 Future branches should add real detectors behind the existing contract:
 
-- CIFT model host: wrap the connector in a self-hosted provider that manages
-  model lifetime, tokenizer/chat-template rendering, and request concurrency.
+- CIFT self-hosted provider: manage live request routing, generation, and
+  cancellation around the extractor host.
 - DP-HONEY runtime: register honeytokens and populate `sensitive_spans`.
 - Canary scanners: extend exact model-output scanning to tool arguments and
   streaming outputs.

@@ -410,8 +410,14 @@ runtime `NormalizedTurn` into the same hidden-state feature vector used by the
 offline extraction path. For `readout_window_layer_15`, it expects the current
 runtime-bridge shape: one rendered-prompt user message plus
 `metadata["cift"]["readout_token_indices"]`. This is enough to plug into
-`CiftFeatureVectorAnnotator`; full model-host lifecycle and chat-template
-rendering remain runtime/provider work.
+`CiftFeatureVectorAnnotator`.
+
+`src/aegis_introspection/runtime_cift_model_host.py` is the first model-host
+wrapper around that connector. It lazy-loads a `transformers` causal LM,
+supports either the current single rendered-prompt bridge or tokenizer
+chat-template rendering, serializes hidden-state forward passes, and keeps the
+runtime protocol unchanged. It still does not implement generation; that remains
+the next self-hosted provider boundary.
 
 The V4.1 runtime bridge now includes both `NormalizedTurn` rows and trained
 bundle `DetectorResult` rows. The trained DetectorResult export has 96 task
