@@ -404,6 +404,15 @@ class ordering, threshold metadata, and audit-safe identifiers. This is the
 artifact that `aegis.detectors.CiftRuntimeDetector` can load without importing
 `aegis_introspection` or unpickling research classes.
 
+The first self-hosted feature connector now lives at
+`src/aegis_introspection/runtime_cift_feature_extractor.py`. It adapts a
+runtime `NormalizedTurn` into the same hidden-state feature vector used by the
+offline extraction path. For `readout_window_layer_15`, it expects the current
+runtime-bridge shape: one rendered-prompt user message plus
+`metadata["cift"]["readout_token_indices"]`. This is enough to plug into
+`CiftFeatureVectorAnnotator`; full model-host lifecycle and chat-template
+rendering remain runtime/provider work.
+
 The V4.1 runtime bridge now includes both `NormalizedTurn` rows and trained
 bundle `DetectorResult` rows. The trained DetectorResult export has 96 task
 rows: 48 `allow`, 48 `warn`, and 1.0000 in-sample projection accuracy over the

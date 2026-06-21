@@ -144,13 +144,21 @@ self-hosted extractor cannot provide a vector, the turn remains unchanged and
 activation capture as a connector concern while preserving the runtime spine
 contract.
 
+The introspection package now provides the first connector implementation:
+`aegis_introspection.runtime_cift_feature_extractor.RuntimeCiftFeatureExtractor`.
+It reuses the same hidden-state pooling code as the offline activation
+extraction scripts and supports feature keys such as `readout_window_layer_15`.
+It currently expects the runtime bridge shape used by the synthetic datasets:
+one rendered-prompt user message plus `metadata["cift"]["readout_token_indices"]`
+for readout-window features. Broader chat-template rendering remains a separate
+model-hosting concern.
+
 ## Follow-Up Integration
 
 Future branches should add real detectors behind the existing contract:
 
-- CIFT provider implementation: implement the caller-supplied extractor that
-  converts self-hosted activation capture into the feature vectors consumed by
-  `CiftFeatureVectorAnnotator`.
+- CIFT model host: wrap the connector in a self-hosted provider that manages
+  model lifetime, tokenizer/chat-template rendering, and request concurrency.
 - DP-HONEY runtime: register honeytokens and populate `sensitive_spans`.
 - Canary scanners: extend exact model-output scanning to tool arguments and
   streaming outputs.
