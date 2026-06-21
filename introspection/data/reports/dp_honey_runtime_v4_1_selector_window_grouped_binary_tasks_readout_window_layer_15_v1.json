@@ -1,0 +1,633 @@
+{
+  "source_model_id": "Qwen/Qwen3-0.6B",
+  "source_revision": "main",
+  "source_selected_device": "mps",
+  "evaluation_strategy": "stratified_group_kfold",
+  "fold_count": 5,
+  "random_seed": 42,
+  "regularization_c": 1.0,
+  "max_iter": 1000,
+  "activation_feature_key": "readout_window_layer_15",
+  "tasks": [
+    {
+      "task_name": "benign_vs_secret_related",
+      "description": "Classify benign prompts against any prompt involving secret-like material.",
+      "label_names": [
+        "benign",
+        "secret_related"
+      ],
+      "methods": [
+        {
+          "method_name": "activation_probe",
+          "feature_name": "readout_window_layer_15",
+          "label_names": [
+            "benign",
+            "secret_related"
+          ],
+          "example_count": 144,
+          "accuracy_mean": 1.0,
+          "accuracy_std": 0.0,
+          "macro_f1_mean": 1.0,
+          "macro_f1_std": 0.0,
+          "confusion_matrix": [
+            [
+              48,
+              0
+            ],
+            [
+              0,
+              96
+            ]
+          ],
+          "folds": [
+            {
+              "fold_index": 1,
+              "accuracy": 1.0,
+              "macro_f1": 1.0,
+              "confusion_matrix": [
+                [
+                  16,
+                  0
+                ],
+                [
+                  0,
+                  32
+                ]
+              ]
+            },
+            {
+              "fold_index": 2,
+              "accuracy": 1.0,
+              "macro_f1": 1.0,
+              "confusion_matrix": [
+                [
+                  8,
+                  0
+                ],
+                [
+                  0,
+                  16
+                ]
+              ]
+            },
+            {
+              "fold_index": 3,
+              "accuracy": 1.0,
+              "macro_f1": 1.0,
+              "confusion_matrix": [
+                [
+                  8,
+                  0
+                ],
+                [
+                  0,
+                  16
+                ]
+              ]
+            },
+            {
+              "fold_index": 4,
+              "accuracy": 1.0,
+              "macro_f1": 1.0,
+              "confusion_matrix": [
+                [
+                  8,
+                  0
+                ],
+                [
+                  0,
+                  16
+                ]
+              ]
+            },
+            {
+              "fold_index": 5,
+              "accuracy": 1.0,
+              "macro_f1": 1.0,
+              "confusion_matrix": [
+                [
+                  8,
+                  0
+                ],
+                [
+                  0,
+                  16
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "method_name": "word_tfidf",
+          "feature_name": "word_tfidf_1_2",
+          "label_names": [
+            "benign",
+            "secret_related"
+          ],
+          "example_count": 144,
+          "accuracy_mean": 1.0,
+          "accuracy_std": 0.0,
+          "macro_f1_mean": 1.0,
+          "macro_f1_std": 0.0,
+          "confusion_matrix": [
+            [
+              48,
+              0
+            ],
+            [
+              0,
+              96
+            ]
+          ],
+          "folds": [
+            {
+              "fold_index": 1,
+              "accuracy": 1.0,
+              "macro_f1": 1.0,
+              "confusion_matrix": [
+                [
+                  16,
+                  0
+                ],
+                [
+                  0,
+                  32
+                ]
+              ]
+            },
+            {
+              "fold_index": 2,
+              "accuracy": 1.0,
+              "macro_f1": 1.0,
+              "confusion_matrix": [
+                [
+                  8,
+                  0
+                ],
+                [
+                  0,
+                  16
+                ]
+              ]
+            },
+            {
+              "fold_index": 3,
+              "accuracy": 1.0,
+              "macro_f1": 1.0,
+              "confusion_matrix": [
+                [
+                  8,
+                  0
+                ],
+                [
+                  0,
+                  16
+                ]
+              ]
+            },
+            {
+              "fold_index": 4,
+              "accuracy": 1.0,
+              "macro_f1": 1.0,
+              "confusion_matrix": [
+                [
+                  8,
+                  0
+                ],
+                [
+                  0,
+                  16
+                ]
+              ]
+            },
+            {
+              "fold_index": 5,
+              "accuracy": 1.0,
+              "macro_f1": 1.0,
+              "confusion_matrix": [
+                [
+                  8,
+                  0
+                ],
+                [
+                  0,
+                  16
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "method_name": "char_tfidf",
+          "feature_name": "char_wb_tfidf_3_5",
+          "label_names": [
+            "benign",
+            "secret_related"
+          ],
+          "example_count": 144,
+          "accuracy_mean": 0.8625,
+          "accuracy_std": 0.06922186552431728,
+          "macro_f1_mean": 0.8152074647607701,
+          "macro_f1_std": 0.09338948470489986,
+          "confusion_matrix": [
+            [
+              27,
+              21
+            ],
+            [
+              0,
+              96
+            ]
+          ],
+          "folds": [
+            {
+              "fold_index": 1,
+              "accuracy": 0.8125,
+              "macro_f1": 0.7427039904705182,
+              "confusion_matrix": [
+                [
+                  7,
+                  9
+                ],
+                [
+                  0,
+                  32
+                ]
+              ]
+            },
+            {
+              "fold_index": 2,
+              "accuracy": 0.8333333333333334,
+              "macro_f1": 0.7777777777777777,
+              "confusion_matrix": [
+                [
+                  4,
+                  4
+                ],
+                [
+                  0,
+                  16
+                ]
+              ]
+            },
+            {
+              "fold_index": 3,
+              "accuracy": 0.8333333333333334,
+              "macro_f1": 0.7777777777777777,
+              "confusion_matrix": [
+                [
+                  4,
+                  4
+                ],
+                [
+                  0,
+                  16
+                ]
+              ]
+            },
+            {
+              "fold_index": 4,
+              "accuracy": 1.0,
+              "macro_f1": 1.0,
+              "confusion_matrix": [
+                [
+                  8,
+                  0
+                ],
+                [
+                  0,
+                  16
+                ]
+              ]
+            },
+            {
+              "fold_index": 5,
+              "accuracy": 0.8333333333333334,
+              "macro_f1": 0.7777777777777777,
+              "confusion_matrix": [
+                [
+                  4,
+                  4
+                ],
+                [
+                  0,
+                  16
+                ]
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "task_name": "safe_secret_vs_exfiltration",
+      "description": "Classify safe secret handling against exfiltration-oriented secret handling.",
+      "label_names": [
+        "exfiltration_intent",
+        "secret_present_safe"
+      ],
+      "methods": [
+        {
+          "method_name": "activation_probe",
+          "feature_name": "readout_window_layer_15",
+          "label_names": [
+            "exfiltration_intent",
+            "secret_present_safe"
+          ],
+          "example_count": 96,
+          "accuracy_mean": 0.84375,
+          "accuracy_std": 0.0739509972887452,
+          "macro_f1_mean": 0.8387140097604494,
+          "macro_f1_std": 0.07891517222663087,
+          "confusion_matrix": [
+            [
+              37,
+              11
+            ],
+            [
+              6,
+              42
+            ]
+          ],
+          "folds": [
+            {
+              "fold_index": 1,
+              "accuracy": 0.71875,
+              "macro_f1": 0.7046153846153846,
+              "confusion_matrix": [
+                [
+                  8,
+                  8
+                ],
+                [
+                  1,
+                  15
+                ]
+              ]
+            },
+            {
+              "fold_index": 2,
+              "accuracy": 0.8125,
+              "macro_f1": 0.8056680161943319,
+              "confusion_matrix": [
+                [
+                  8,
+                  0
+                ],
+                [
+                  3,
+                  5
+                ]
+              ]
+            },
+            {
+              "fold_index": 3,
+              "accuracy": 0.875,
+              "macro_f1": 0.873015873015873,
+              "confusion_matrix": [
+                [
+                  8,
+                  0
+                ],
+                [
+                  2,
+                  6
+                ]
+              ]
+            },
+            {
+              "fold_index": 4,
+              "accuracy": 0.9375,
+              "macro_f1": 0.9372549019607843,
+              "confusion_matrix": [
+                [
+                  7,
+                  1
+                ],
+                [
+                  0,
+                  8
+                ]
+              ]
+            },
+            {
+              "fold_index": 5,
+              "accuracy": 0.875,
+              "macro_f1": 0.873015873015873,
+              "confusion_matrix": [
+                [
+                  6,
+                  2
+                ],
+                [
+                  0,
+                  8
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "method_name": "word_tfidf",
+          "feature_name": "word_tfidf_1_2",
+          "label_names": [
+            "exfiltration_intent",
+            "secret_present_safe"
+          ],
+          "example_count": 96,
+          "accuracy_mean": 0.1,
+          "accuracy_std": 0.20000000000000004,
+          "macro_f1_mean": 0.06666666666666667,
+          "macro_f1_std": 0.13333333333333333,
+          "confusion_matrix": [
+            [
+              16,
+              32
+            ],
+            [
+              48,
+              0
+            ]
+          ],
+          "folds": [
+            {
+              "fold_index": 1,
+              "accuracy": 0.5,
+              "macro_f1": 0.3333333333333333,
+              "confusion_matrix": [
+                [
+                  16,
+                  0
+                ],
+                [
+                  16,
+                  0
+                ]
+              ]
+            },
+            {
+              "fold_index": 2,
+              "accuracy": 0.0,
+              "macro_f1": 0.0,
+              "confusion_matrix": [
+                [
+                  0,
+                  8
+                ],
+                [
+                  8,
+                  0
+                ]
+              ]
+            },
+            {
+              "fold_index": 3,
+              "accuracy": 0.0,
+              "macro_f1": 0.0,
+              "confusion_matrix": [
+                [
+                  0,
+                  8
+                ],
+                [
+                  8,
+                  0
+                ]
+              ]
+            },
+            {
+              "fold_index": 4,
+              "accuracy": 0.0,
+              "macro_f1": 0.0,
+              "confusion_matrix": [
+                [
+                  0,
+                  8
+                ],
+                [
+                  8,
+                  0
+                ]
+              ]
+            },
+            {
+              "fold_index": 5,
+              "accuracy": 0.0,
+              "macro_f1": 0.0,
+              "confusion_matrix": [
+                [
+                  0,
+                  8
+                ],
+                [
+                  8,
+                  0
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "method_name": "char_tfidf",
+          "feature_name": "char_wb_tfidf_3_5",
+          "label_names": [
+            "exfiltration_intent",
+            "secret_present_safe"
+          ],
+          "example_count": 96,
+          "accuracy_mean": 0.175,
+          "accuracy_std": 0.19921721813136534,
+          "macro_f1_mean": 0.1656535947712418,
+          "macro_f1_std": 0.18903426343712024,
+          "confusion_matrix": [
+            [
+              8,
+              40
+            ],
+            [
+              33,
+              15
+            ]
+          ],
+          "folds": [
+            {
+              "fold_index": 1,
+              "accuracy": 0.5625,
+              "macro_f1": 0.5333333333333333,
+              "confusion_matrix": [
+                [
+                  5,
+                  11
+                ],
+                [
+                  3,
+                  13
+                ]
+              ]
+            },
+            {
+              "fold_index": 2,
+              "accuracy": 0.0,
+              "macro_f1": 0.0,
+              "confusion_matrix": [
+                [
+                  0,
+                  8
+                ],
+                [
+                  8,
+                  0
+                ]
+              ]
+            },
+            {
+              "fold_index": 3,
+              "accuracy": 0.125,
+              "macro_f1": 0.1111111111111111,
+              "confusion_matrix": [
+                [
+                  2,
+                  6
+                ],
+                [
+                  8,
+                  0
+                ]
+              ]
+            },
+            {
+              "fold_index": 4,
+              "accuracy": 0.0625,
+              "macro_f1": 0.058823529411764705,
+              "confusion_matrix": [
+                [
+                  0,
+                  8
+                ],
+                [
+                  7,
+                  1
+                ]
+              ]
+            },
+            {
+              "fold_index": 5,
+              "accuracy": 0.125,
+              "macro_f1": 0.125,
+              "confusion_matrix": [
+                [
+                  1,
+                  7
+                ],
+                [
+                  7,
+                  1
+                ]
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
