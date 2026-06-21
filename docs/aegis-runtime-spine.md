@@ -157,15 +157,21 @@ connector in the first self-hosted model-host boundary. It lazy-loads a
 `transformers` causal LM, renders either a pre-rendered prompt or tokenizer
 chat-template prompt, serializes hidden-state forward passes, and then hands the
 feature vector back through the same `CiftFeatureVectorAnnotator` protocol.
-Generation remains a provider concern; this host only owns activation feature
-extraction.
+
+`aegis_introspection.runtime_cift_self_hosted_provider.RuntimeCiftSelfHostedProvider`
+is the first runtime-facing provider wrapper around that same host. It implements
+the `ModelProvider` protocol, renders prompts through the host config, runs
+generation under the host's exclusive model lock, and raises a typed timeout
+error when generation exceeds the configured deadline. This keeps self-hosted
+generation, CIFT extraction, and runtime orchestration connected without moving
+`torch` or `transformers` into `src/aegis`.
 
 ## Follow-Up Integration
 
 Future branches should add real detectors behind the existing contract:
 
-- CIFT self-hosted provider: manage live request routing, generation, and
-  cancellation around the extractor host.
+- CIFT self-hosted app wiring: connect a concrete proxy entrypoint to the
+  self-hosted provider and runtime detector bundle.
 - DP-HONEY runtime: register honeytokens and populate `sensitive_spans`.
 - Canary scanners: extend exact model-output scanning to tool arguments and
   streaming outputs.

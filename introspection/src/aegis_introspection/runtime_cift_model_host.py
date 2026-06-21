@@ -4,7 +4,7 @@ import threading
 from collections.abc import Mapping
 from dataclasses import dataclass
 from types import TracebackType
-from typing import Literal, Protocol, TypeAlias, runtime_checkable
+from typing import Literal, Protocol, TypeAlias, TypeVar, runtime_checkable
 
 from transformers import PreTrainedTokenizerBase
 
@@ -24,6 +24,7 @@ from aegis_introspection.runtime_cift_feature_extractor import (
 
 PromptRenderMode: TypeAlias = Literal["single_rendered_prompt", "chat_template"]
 ChatMessage: TypeAlias = dict[str, str]
+LoadedModelOperationResult = TypeVar("LoadedModelOperationResult")
 
 
 class RuntimeCiftModelHostError(ValueError):
@@ -33,6 +34,11 @@ class RuntimeCiftModelHostError(ValueError):
 class CausalLmLoader(Protocol):
     def load(self, config: ModelLoadConfig) -> LoadedCausalLM:
         """Load a causal language model once for hosted extraction."""
+
+
+class LoadedModelOperation(Protocol[LoadedModelOperationResult]):
+    def __call__(self, loaded_model: LoadedCausalLM) -> LoadedModelOperationResult:
+        """Run an operation against the hosted model."""
 
 
 class ForwardPassLock(Protocol):
@@ -107,6 +113,10 @@ class RuntimeCiftModelHost:
         self._forward_lock = threading.Lock()
         self._loaded_model: LoadedCausalLM | None = None
 
+    @property
+    def config(self) -> RuntimeCiftModelHostConfig:
+        return self._config
+
     def extract_feature_vector(self, turn: RuntimeTurnLike, feature_key: str) -> FeatureVector | None:
         parsed_key = parse_runtime_cift_feature_key(feature_key=feature_key)
         readout_token_indices = readout_indices_from_turn(turn=turn)
@@ -143,6 +153,14 @@ class RuntimeCiftModelHost:
             loaded_model = self._loader.load(config=self._config.model)
             self._loaded_model = loaded_model
             return loaded_model
+
+    def run_exclusive(
+        self,
+        operation: LoadedModelOperation[LoadedModelOperationResult],
+    ) -> LoadedModelOperationResult:
+        loaded_model = self.loaded_model()
+        with self._forward_lock:
+            return operation(loaded_model)
 
 
 def build_runtime_cift_model_host(config: RuntimeCiftModelHostConfig) -> RuntimeCiftModelHost:

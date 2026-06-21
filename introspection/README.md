@@ -416,8 +416,15 @@ runtime-bridge shape: one rendered-prompt user message plus
 wrapper around that connector. It lazy-loads a `transformers` causal LM,
 supports either the current single rendered-prompt bridge or tokenizer
 chat-template rendering, serializes hidden-state forward passes, and keeps the
-runtime protocol unchanged. It still does not implement generation; that remains
-the next self-hosted provider boundary.
+runtime protocol unchanged.
+
+`src/aegis_introspection/runtime_cift_self_hosted_provider.py` is the first
+runtime-facing provider wrapper around the host. It implements the Aegis
+`ModelProvider` protocol, renders prompts with the same host configuration, runs
+generation under the host's exclusive model lock, and raises a typed timeout
+error when generation exceeds the configured deadline. This gives the runtime a
+self-hosted generation path without importing `torch` or `transformers` into
+`src/aegis`.
 
 The V4.1 runtime bridge now includes both `NormalizedTurn` rows and trained
 bundle `DetectorResult` rows. The trained DetectorResult export has 96 task
