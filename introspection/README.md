@@ -14,7 +14,7 @@ larger system should be treated as a multi-monitor gateway:
 
 | Component | Role | Current Status |
 |---|---|---|
-| DP-HONEY | Inject format-matched honeytokens before model access. | DP-HONEY-lite data primitive and hard V2 dataset implemented; full DP-HONEY not implemented yet. |
+| DP-HONEY | Inject format-matched honeytokens before model access. | DP-HONEY-lite data primitive implemented; prompt generator can also use the merged Aegis DP-HONEY canary backend for the next CIFT dataset. Full paper DP-HONEY calibration is not implemented here. |
 | CIFT-like activation monitor | Read hidden-state features before output generation. | Current focus. |
 | Text leakage detector | Scan generated text for canary or secret leakage. | Not implemented here yet. |
 | NIMBUS-like accumulator | Track cumulative leakage risk over a conversation. | Not implemented here yet. |
@@ -153,6 +153,15 @@ changes the prompt contract to a lexically controlled mode map. Every row
 contains `credential_value`, `summary_value`, `mode_a`, `mode_b`, `copy`, and
 `mask`; selected modes are balanced across labels; and the mode-to-credential
 action mapping flips across scenario families.
+
+The prompt generator now has two honeytoken backends. The default `lite`
+backend preserves historical deterministic `sk-hny-*` and database-URI-shaped
+tokens for regression comparison. The `dp_honey` backend routes token generation
+through `aegis.canaries.dp_honey.build_dp_honey_ledger`, preserving the same
+structured prompt schema, character spans, token spans, and readout windows
+while replacing the local toy token source with the merged Aegis DP-HONEY
+generator. These runtime-DP-HONEY rows should be treated as a new dataset family
+and should not overwrite existing `dp_honey_lite_*` artifacts.
 
 Seven DP-HONEY-lite activation artifacts are now registered:
 
@@ -991,6 +1000,17 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/sheep/Desktop/Gauntlet/Capstone/intr
   /Users/sheep/Desktop/Gauntlet/Capstone/.venv-introspection/bin/python introspection/scripts/generate_dp_honey_lite_prompts.py \
   --template-set hard_v3 \
   --seed aegis-dp-honey-lite-v3 \
+  --examples-per-template 4 \
+  --readout-width 6
+```
+
+Generate a runtime-DP-HONEY structured prompt dataset for the next CIFT run:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/sheep/Desktop/Gauntlet/Capstone/introspection/src \
+  /Users/sheep/Desktop/Gauntlet/Capstone/.venv-introspection/bin/python introspection/scripts/generate_dp_honey_lite_prompts.py \
+  --template-set hard_v4_1 \
+  --honeytoken-backend dp_honey \
   --examples-per-template 4 \
   --readout-width 6
 ```

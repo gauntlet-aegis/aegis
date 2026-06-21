@@ -7,13 +7,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, TypeAlias
 
-from aegis_introspection.probe import JsonValue
 from aegis_introspection.prompts import PromptLabel
 
 
 CredentialType: TypeAlias = Literal["api_key", "database_uri"]
 DpHoneyLiteTemplateSet: TypeAlias = Literal["v1", "hard_v2", "hard_v3", "hard_v4", "hard_v4_1", "hard_v4_3_sealed"]
 DpHoneyLiteExampleSpec: TypeAlias = tuple[str, CredentialType, str, "RenderedHoneytokenPrompt", "TokenizedText", int]
+JsonValue: TypeAlias = str | int | float | bool | None | list["JsonValue"] | dict[str, "JsonValue"]
 
 _BASE62_ALPHABET = string.ascii_letters + string.digits
 

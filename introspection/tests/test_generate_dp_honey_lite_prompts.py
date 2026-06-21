@@ -1,7 +1,7 @@
 import unittest
 from collections import Counter
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Mapping
 
 from introspection.scripts.generate_dp_honey_lite_prompts import (
     GenerateDpHoneyLitePromptsConfig,
@@ -9,6 +9,7 @@ from introspection.scripts.generate_dp_honey_lite_prompts import (
     _parse_args,
 )
 from aegis_introspection.honeytokens import DpHoneyLiteTemplate, dp_honey_lite_templates
+from detect.dp_honey import get_format
 
 
 class CharacterOffsetTokenizer:
@@ -77,6 +78,34 @@ class GenerateDpHoneyLitePromptsTest(unittest.TestCase):
         self.assertEqual("prompts_dp_honey_lite_v4_3_sealed.jsonl", config.output_path.name)
         self.assertEqual("aegis-dp-honey-lite-v4-3-sealed", config.seed)
 
+    def test_parse_args_accepts_dp_honey_backend_with_separate_runtime_output(self) -> None:
+        config = _parse_args(("--template-set", "hard_v4_1", "--honeytoken-backend", "dp_honey"))
+
+        self.assertEqual("dp_honey", config.honeytoken_backend)
+        self.assertEqual("prompts_dp_honey_runtime_v4_1.jsonl", config.output_path.name)
+        self.assertEqual("aegis-dp-honey-runtime-v4-1", config.seed)
+
+    def test_dp_honey_backend_example_specs_use_aegis_generator_shapes(self) -> None:
+        config = GenerateDpHoneyLitePromptsConfig(
+            output_path=Path("unused.jsonl"),
+            model_id="unused",
+            revision="main",
+            local_files_only=True,
+            seed="capstone-runtime-dp-honey",
+            examples_per_template=1,
+            readout_width=6,
+            template_set="v1",
+            honeytoken_backend="dp_honey",
+        )
+
+        specs = _example_specs(tokenizer=CharacterOffsetTokenizer(), config=config)
+        tokens_by_type = {credential_type: token for _, credential_type, token, _, _, _ in specs}
+        rendered_tags = {tag for spec in specs for tag in spec[3].tags}
+
+        self.assertTrue(get_format("openai-project-key").validate(tokens_by_type["api_key"]))
+        self.assertTrue(get_format("database-password").validate(tokens_by_type["database_uri"]))
+        self.assertIn("dp_honey_runtime", rendered_tags)
+
     def test_hard_v2_example_specs_preserve_balance_dimensions(self) -> None:
         config = GenerateDpHoneyLitePromptsConfig(
             output_path=Path("unused.jsonl"),
@@ -87,6 +116,7 @@ class GenerateDpHoneyLitePromptsTest(unittest.TestCase):
             examples_per_template=4,
             readout_width=6,
             template_set="hard_v2",
+            honeytoken_backend="lite",
         )
 
         specs = _example_specs(tokenizer=CharacterOffsetTokenizer(), config=config)
@@ -116,6 +146,7 @@ class GenerateDpHoneyLitePromptsTest(unittest.TestCase):
             examples_per_template=4,
             readout_width=6,
             template_set="hard_v3",
+            honeytoken_backend="lite",
         )
 
         specs = _example_specs(tokenizer=CharacterOffsetTokenizer(), config=config)
@@ -148,6 +179,7 @@ class GenerateDpHoneyLitePromptsTest(unittest.TestCase):
             examples_per_template=4,
             readout_width=6,
             template_set="hard_v4",
+            honeytoken_backend="lite",
         )
 
         specs = _example_specs(tokenizer=CharacterOffsetTokenizer(), config=config)
@@ -180,6 +212,7 @@ class GenerateDpHoneyLitePromptsTest(unittest.TestCase):
             examples_per_template=4,
             readout_width=6,
             template_set="hard_v4_1",
+            honeytoken_backend="lite",
         )
 
         specs = _example_specs(tokenizer=CharacterOffsetTokenizer(), config=config)
@@ -212,6 +245,7 @@ class GenerateDpHoneyLitePromptsTest(unittest.TestCase):
             examples_per_template=4,
             readout_width=6,
             template_set="hard_v4_3_sealed",
+            honeytoken_backend="lite",
         )
 
         specs = _example_specs(tokenizer=CharacterOffsetTokenizer(), config=config)
@@ -260,6 +294,7 @@ class GenerateDpHoneyLitePromptsTest(unittest.TestCase):
             examples_per_template=4,
             readout_width=6,
             template_set="hard_v4_1",
+            honeytoken_backend="lite",
         )
         v4_3_config = GenerateDpHoneyLitePromptsConfig(
             output_path=Path("unused.jsonl"),
@@ -270,10 +305,15 @@ class GenerateDpHoneyLitePromptsTest(unittest.TestCase):
             examples_per_template=4,
             readout_width=6,
             template_set="hard_v4_3_sealed",
+            honeytoken_backend="lite",
         )
 
-        v4_1_honeytokens = {spec[2] for spec in _example_specs(tokenizer=CharacterOffsetTokenizer(), config=v4_1_config)}
-        v4_3_honeytokens = {spec[2] for spec in _example_specs(tokenizer=CharacterOffsetTokenizer(), config=v4_3_config)}
+        v4_1_honeytokens = {
+            spec[2] for spec in _example_specs(tokenizer=CharacterOffsetTokenizer(), config=v4_1_config)
+        }
+        v4_3_honeytokens = {
+            spec[2] for spec in _example_specs(tokenizer=CharacterOffsetTokenizer(), config=v4_3_config)
+        }
 
         self.assertEqual(set(), v4_1_honeytokens.intersection(v4_3_honeytokens))
 
