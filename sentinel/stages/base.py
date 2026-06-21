@@ -12,11 +12,11 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
-import torch
-
 from sentinel.events.schema import LayerResult
 
 if TYPE_CHECKING:
+    import torch
+
     from sentinel.proxy.context import TurnContext
 
 

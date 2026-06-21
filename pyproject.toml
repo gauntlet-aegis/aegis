@@ -25,6 +25,9 @@ dev = [
     "pytest-asyncio",
     "ruff",
 ]
+eval = [
+    "matplotlib>=3.8",
+]
 
 [build-system]
 requires = ["setuptools>=68"]
