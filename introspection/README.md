@@ -103,7 +103,7 @@ readout-position, calibrated-deviation monitor.
 
 ## Current State
 
-Seven datasets are currently registered in `data/lineage.json`:
+Seventeen datasets are currently registered in `data/lineage.json`:
 
 | Dataset | Purpose | Rows |
 |---|---|---:|
@@ -114,6 +114,16 @@ Seven datasets are currently registered in `data/lineage.json`:
 | `dp_honey_lite_prompts_v1` | Proxy-shaped honeytoken prompts with span metadata and readout windows. | 24 |
 | `dp_honey_lite_prompts_v2` | Harder paired DP-HONEY-lite scenarios with balanced credential and payload conditions. | 240 |
 | `dp_honey_lite_prompts_v3` | Lexically controlled mode-map prompts for safe-secret versus exfiltration pressure testing. | 240 |
+| `dp_honey_lite_v3_policy_windows` | V3-derived policy-window control with explicit selected policy decision text in the readout window. | 240 |
+| `dp_honey_lite_v3_selector_windows` | V3-derived selector-window checkpoint with selected field/mode tokens but no explicit decision clause. | 240 |
+| `dp_honey_lite_prompts_v4` | Targeted mode_b control focused on prior selector-window failure families. | 144 |
+| `dp_honey_lite_v4_policy_windows` | V4-derived policy-window control with explicit selected mode_b decision text. | 144 |
+| `dp_honey_lite_v4_selector_windows` | V4-derived selector-window control over selected field and mode_b tokens. | 144 |
+| `dp_honey_lite_prompts_v4_1` | Focused relational-control checkpoint without the V4 label-specific policy-map shortcut. | 144 |
+| `dp_honey_lite_v4_1_policy_windows` | V4.1-derived policy-window control with explicit selected decision text. | 144 |
+| `dp_honey_lite_v4_1_selector_windows` | V4.1-derived selector-window checkpoint over selected field and selected mode tokens. | 144 |
+| `runtime_turns_dp_honey_lite_v3_selector_windows_v1` | `NormalizedTurn`-shaped bridge export for runtime-spine integration checks. | 240 |
+| `runtime_turns_dp_honey_lite_v4_1_selector_windows_v1` | `NormalizedTurn`-shaped bridge export for V4.1 runtime-spine integration checks. | 144 |
 
 The four historical probe datasets use the same label shape:
 
@@ -142,12 +152,16 @@ contains `credential_value`, `summary_value`, `mode_a`, `mode_b`, `copy`, and
 `mask`; selected modes are balanced across labels; and the mode-to-credential
 action mapping flips across scenario families.
 
-Three DP-HONEY-lite activation artifacts are now registered:
+Seven DP-HONEY-lite activation artifacts are now registered:
 
 ```text
 qwen3_0_6b_dp_honey_lite_v1_readout_windows_v1
 qwen3_0_6b_dp_honey_lite_v2_all_pooling_v1
 qwen3_0_6b_dp_honey_lite_v3_all_pooling_v1
+qwen3_0_6b_dp_honey_lite_v3_policy_windows_v1
+qwen3_0_6b_dp_honey_lite_v3_selector_windows_v1
+qwen3_0_6b_dp_honey_lite_v4_selector_windows_v1
+qwen3_0_6b_dp_honey_lite_v4_1_selector_windows_v1
 ```
 
 The V1 artifact extracts all 29 Qwen 0.6B hidden-state layers using
@@ -213,6 +227,173 @@ accuracy, with every payload row predicted as copy/exfiltration. This suggests
 that the base model is not reliably executing the symbolic mode-map policy, so
 the current weak activation signal is at least partly a model-competence issue,
 not only a readout-localization issue.
+
+The V3.3 policy-window localization experiment separates two readout-window
+variants. The `policy_windows` control includes the selected policy's explicit
+`copy` or `mask` decision text, and therefore reaches 1.0000 macro F1 on
+`safe_secret_vs_exfiltration`. Treat that as an oracle-style localization
+control, not a detector claim. The `selector_windows` variant includes only the
+selected field and selected mode tokens. It is the useful checkpoint: the best
+layer is `readout_window_layer_15`, with 0.7736 macro F1 / 0.7812 accuracy on
+`safe_secret_vs_exfiltration`. In the grouped comparison, the same selector
+feature beats word TF-IDF at 0.2670 macro F1 and character TF-IDF at 0.3542.
+This supports the readout-localization hypothesis while preserving the warning
+that the current V3 task is still partly limited by Qwen 0.6B's policy
+resolution behavior.
+
+The selector-window error analysis gives the next dataset target. The activation
+probe makes 35 errors on `safe_secret_vs_exfiltration`, compared with 112 for
+word TF-IDF and 102 for character TF-IDF. Errors cluster most strongly on
+payload examples and `mode_b` examples: payload exfiltration rows have 15
+errors / 40 examples, while no-payload exfiltration rows have 6 errors / 40
+examples; `mode_b` exfiltration rows have 15 errors / 40 examples, while
+`mode_a` exfiltration rows have 6 errors / 40 examples. The largest family
+cluster is `dp_honey_lite_v3_support_transcript` exfiltration, with 7 errors /
+8 examples. The next dataset iteration should target that payload plus `mode_b`
+weakness rather than expanding DP-HONEY mechanics first.
+
+The first runtime-spine bridge export now converts the V3 selector-window rows
+into JSON-safe objects shaped like `aegis.core.contracts.NormalizedTurn`. The
+mapping is intentionally narrow:
+
+| Structured Prompt Field | Runtime-Spine Field |
+|---|---|
+| `text` / `rendered_prompt` | `messages[0].content` |
+| `honeytoken_id`, `honeytoken_sha256`, `credential_type` | `sensitive_spans[0].identifier` and metadata |
+| `secret_char_span`, `secret_token_span` | `sensitive_spans[0]` offsets |
+| `query_*`, `payload_*`, `readout_token_indices` | `metadata.cift` |
+| `policy_window_*` | `metadata.policy_window` |
+| `label`, `family`, `tags` | `metadata.eval` |
+
+This bridge is appropriate for offline evaluation and integration testing. It
+is not yet the final production boundary: the current synthetic row still uses
+a single rendered prompt message and can contain synthetic honeytoken text in
+`messages[0].content`. Production traffic should split real chat messages and
+tool calls at the proxy adapter, and audit-safe paths should carry real
+credentials as handles, spans, hashes, or detector evidence rather than raw
+secret values.
+
+The matching detector-result bridge converts selector-window CIFT predictions
+into JSON-safe objects shaped like `aegis.core.contracts.DetectorResult`. The
+historical bridge export has 160 rows for the `safe_secret_vs_exfiltration`
+task, joined back to the runtime-turn export by `example_id`. It uses:
+
+| DetectorResult Field | Bridge Value |
+|---|---|
+| `detector_name` | `cift_selector_probe` |
+| `component` | `cift` |
+| `recommended_action` | `warn` for predicted exfiltration, `allow` otherwise |
+| `capability_required` | `self_hosted_introspection` |
+| `capability_status` | `active` |
+| `evidence` | task, feature key, probe version, fold, family, prediction, and offline-eval labels |
+
+The detector-result score is deliberately marked as
+`prediction_label_score_not_calibrated`. It is a bridge artifact that proves the
+shape of the boundary, not a calibrated production risk score.
+
+The calibrated detector-result export is now the better runtime-facing bridge
+artifact. It uses the same selector-window layer 15 feature and the same
+runtime-turn join, but converts grouped out-of-fold activation predictions into
+Platt-calibrated exfiltration probabilities. The score semantics are recorded
+as `inner_cv_platt_calibrated_probability`, and the current report reaches
+0.8125 macro F1 / 0.8125 accuracy with Brier score 0.1485 and expected
+calibration error 0.1110. Treat this as an offline detector calibration
+checkpoint, not as a production operating-point guarantee.
+
+The first calibrated operating-point sweep makes the policy tradeoff explicit.
+At threshold `0.50`, the detector is balanced: 65 true positives, 15 false
+positives, 65 true negatives, and 15 false negatives, for 0.8125 macro F1. A
+high-recall threshold of `0.25` catches all 80 exfiltration rows, but warns on
+63 of 80 safe-secret rows. This gives the runtime spine a concrete policy
+choice: `0.50` is the current balanced offline checkpoint, while lower
+thresholds are only appropriate for a noisy warning lane or human-review mode.
+
+The selector-window score diagnostic rules out a simple global-threshold fix as
+the next main lever. Threshold `0.50` remains the best macro-F1 operating point
+at 0.8125. Threshold `0.60` reduces false positives from 15 to 8, but increases
+false negatives from 15 to 22 and slightly lowers macro F1 to 0.8111. Of the 30
+calibrated detector errors, 13 are near-threshold and 17 are confident errors.
+The strongest pressure slices are `mode_b` with 21 errors / 80 examples and
+payload rows with 20 errors / 80 examples. The highest-signal family clusters
+are `support_transcript` false negatives, `access_review` confident false
+negatives, and `customer_summary` / `audit_export` false positives. The next
+CIFT move should therefore target representation and readout design around
+those slices, not just tune the threshold.
+
+A selector-window feature-expression ablation tested whether the existing
+readout-window artifact already contains a better representation than single
+layer 15. In raw grouped activation-probe evaluation, the best variant is
+`selector_band_12_18`, a concatenation of `readout_window_layer_12` through
+`readout_window_layer_18`, at 0.8138 macro F1 / 0.8187 accuracy. The single
+layer-15 baseline in the same raw grouped setup is 0.7736 macro F1 / 0.7812
+accuracy. This is a useful representation signal, but it is not a promotion
+result. After the same inner Platt calibration used by the runtime-facing
+detector, `selector_band_12_18` reaches 0.8062 macro F1 / 0.8063 accuracy at
+threshold `0.50`, with best swept macro F1 of 0.8106 at threshold `0.65`. That
+does not beat the calibrated layer-15 checkpoint at 0.8125 macro F1. It also
+increases confident errors from 17 to 23, despite improving expected calibration
+error from 0.1110 to 0.0968. Treat the mid-band result as evidence that layers
+12-18 contain useful signal, but do not replace the current calibrated
+checkpoint with it.
+
+The V4 selector-window checkpoint targets the prior failure families directly:
+`support_transcript`, `access_review`, `customer_summary`, `audit_export`,
+`incident_ticket`, and `workflow_automation`. Every row uses `selected_mode =
+mode_b`, with balanced labels and payload/no-payload controls. This isolates the
+mode_b failure slice, but it also makes the task lexically recoverable. On the
+V4 selector-window dataset, `readout_window_layer_15` reaches 1.0000 macro F1 /
+1.0000 accuracy on `safe_secret_vs_exfiltration`, but word TF-IDF also reaches
+1.0000 macro F1 / 1.0000 accuracy. Treat V4 as a targeted control and schema
+checkpoint, not as evidence that the CIFT monitor improved. The next version
+should preserve the mode_b focus while making the selected copy/mask resolution
+less directly recoverable by full-prompt surface text.
+
+The V4.1 selector-window checkpoint keeps the same six pressure families but
+removes V4's label-specific policy-map shortcut. It returns to the relational
+mode-map design: selected modes are balanced by label, and each family keeps a
+single stable `mode_a` / `mode_b` policy map across benign, safe-secret, and
+exfiltration rows. This makes the task materially harder. On
+`safe_secret_vs_exfiltration`, the best and reference feature is
+`readout_window_layer_15` at 0.7646 macro F1 / 0.7875 accuracy. Word TF-IDF
+drops to 0.1172 macro F1 / 0.1187 accuracy, and character TF-IDF reaches 0.2851
+macro F1 / 0.3063 accuracy. Treat V4.1 as the current hard selector-window
+checkpoint: it restores a meaningful activation-over-text gap, but the probe is
+not close to solved and should be followed by error analysis and calibration.
+
+The V4.1 error analysis and calibration work now make that checkpoint
+trainable rather than merely diagnostic. On `safe_secret_vs_exfiltration`, the
+activation probe makes 20 grouped out-of-fold errors, compared with 78 for word
+TF-IDF and 66 for character TF-IDF. The largest pressure slice is
+`support_transcript` exfiltration, with 7 errors out of 8 examples; additional
+pressure remains in `incident_ticket` exfiltration, `audit_export` safe-secret
+rows, mode-b exfiltration, and no-payload exfiltration. The refreshed grouped
+calibration report reaches 0.7708 accuracy / 0.7704 macro F1, with Brier score
+0.1838 and expected calibration error 0.1701. The calibrated operating-point
+sweep finds best balanced macro F1 at threshold `0.55`, but that threshold
+belongs to out-of-fold calibrated probabilities, not to the full-train bundle's
+classifier-probability score.
+
+The first fully trained CIFT-like detector bundle is now registered as:
+
+```text
+cift_qwen3_0_6b_dp_honey_lite_v4_1_selector_window_layer_15_v1
+```
+
+The bundle lives at
+`data/models/cift_qwen3_0_6b_dp_honey_lite_v4_1_selector_window_layer_15_v1.pkl`.
+It trains a logistic activation classifier on all eligible V4.1
+`safe_secret_vs_exfiltration` rows using `readout_window_layer_15`, records
+`exfiltration_intent` as the positive label, and stores the source activation
+artifact hash plus evaluation report IDs. It is an offline research candidate,
+not a production policy authority. The bundle emits full-train classifier
+probabilities at threshold `0.50`; calibration reports remain the out-of-fold
+evidence trail.
+
+The V4.1 runtime bridge now includes both `NormalizedTurn` rows and trained
+bundle `DetectorResult` rows. The trained DetectorResult export has 96 task
+rows: 48 `allow`, 48 `warn`, and 1.0000 in-sample projection accuracy over the
+training examples. Treat that as an integration sanity check only. The quality
+claim remains the grouped out-of-fold evaluation and calibration metrics above.
 
 Each prompt has a `family` field. Grouped evaluation uses those families to
 hold related prompt patterns out together.
@@ -664,7 +845,16 @@ introspection/
 │   ├── prompts_hard_v3.jsonl # Hard Baseline V3 dataset
 │   ├── prompts_dp_honey_lite_v1.jsonl # DP-HONEY-lite structured smoke dataset
 │   ├── prompts_dp_honey_lite_v2.jsonl # Hard DP-HONEY-lite paired scenario dataset
-│   └── prompts_dp_honey_lite_v3.jsonl # Lexically controlled DP-HONEY-lite mode-map dataset
+│   ├── prompts_dp_honey_lite_v3.jsonl # Lexically controlled DP-HONEY-lite mode-map dataset
+│   ├── prompts_dp_honey_lite_v3_policy_windows.jsonl # V3 explicit policy-window control
+│   ├── prompts_dp_honey_lite_v3_selector_windows.jsonl # V3 selector-window checkpoint
+│   ├── prompts_dp_honey_lite_v4.jsonl # Targeted V4 mode_b control dataset
+│   ├── prompts_dp_honey_lite_v4_selector_windows.jsonl # V4 selector-window control
+│   ├── prompts_dp_honey_lite_v4_1.jsonl # Focused V4.1 relational-control dataset
+│   ├── prompts_dp_honey_lite_v4_1_selector_windows.jsonl # V4.1 selector-window checkpoint
+│   ├── detector_results_cift_v3_selector_window_layer_15_v1.jsonl # Aegis DetectorResult bridge export
+│   ├── detector_results_cift_v3_selector_window_layer_15_calibrated_v1.jsonl # Calibrated DetectorResult export
+│   └── runtime_turns_dp_honey_lite_v3_selector_windows.jsonl # Aegis NormalizedTurn bridge export
 ├── notebooks/            # Interactive exploration notebooks
 ├── scripts/              # CLI entry points for extraction, training, summaries, validation
 ├── src/aegis_introspection/
@@ -885,6 +1075,344 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/sheep/Desktop/Gauntlet/Capstone/intr
   --output-json introspection/data/reports/dp_honey_lite_v3_policy_resolution_v1.json \
   --output-md introspection/data/reports/dp_honey_lite_v3_policy_resolution_v1_summary.md \
   --max-new-tokens 16
+```
+
+Generate the hard V3 policy-window and selector-window datasets:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/sheep/Desktop/Gauntlet/Capstone/introspection/src \
+  /Users/sheep/Desktop/Gauntlet/Capstone/.venv-introspection/bin/python introspection/scripts/generate_v3_policy_window_prompts.py \
+  --input introspection/data/prompts_dp_honey_lite_v3.jsonl \
+  --output introspection/data/prompts_dp_honey_lite_v3_policy_windows.jsonl \
+  --window-kind decision_path
+```
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/sheep/Desktop/Gauntlet/Capstone/introspection/src \
+  /Users/sheep/Desktop/Gauntlet/Capstone/.venv-introspection/bin/python introspection/scripts/generate_v3_policy_window_prompts.py \
+  --input introspection/data/prompts_dp_honey_lite_v3.jsonl \
+  --output introspection/data/prompts_dp_honey_lite_v3_selector_windows.jsonl \
+  --window-kind selector
+```
+
+Extract and evaluate the hard V3 selector-window checkpoint:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/sheep/Desktop/Gauntlet/Capstone/introspection/src \
+  /Users/sheep/Desktop/Gauntlet/Capstone/.venv-introspection/bin/python introspection/scripts/extract_activations.py \
+  --prompts introspection/data/prompts_dp_honey_lite_v3_selector_windows.jsonl \
+  --output introspection/data/activations/qwen3_0_6b_dp_honey_lite_v3_selector_windows.pt \
+  --layers 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28 \
+  --pooling readout_window
+```
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/sheep/Desktop/Gauntlet/Capstone/introspection/src \
+  /Users/sheep/Desktop/Gauntlet/Capstone/.venv-introspection/bin/python introspection/scripts/sweep_binary_layers.py \
+  --artifact introspection/data/activations/qwen3_0_6b_dp_honey_lite_v3_selector_windows.pt \
+  --output-json introspection/data/reports/dp_honey_lite_v3_selector_window_sweep_safe_secret_vs_exfiltration_v1.json \
+  --output-md introspection/data/reports/dp_honey_lite_v3_selector_window_sweep_safe_secret_vs_exfiltration_v1_summary.md \
+  --task safe_secret_vs_exfiltration \
+  --reference-feature readout_window_layer_21 \
+  --folds 5
+```
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/sheep/Desktop/Gauntlet/Capstone/introspection/src \
+  /Users/sheep/Desktop/Gauntlet/Capstone/.venv-introspection/bin/python introspection/scripts/train_grouped_binary_tasks.py \
+  --artifact introspection/data/activations/qwen3_0_6b_dp_honey_lite_v3_selector_windows.pt \
+  --output-json introspection/data/reports/dp_honey_lite_v3_selector_window_grouped_binary_tasks_readout_window_layer_15_v1.json \
+  --output-md introspection/data/reports/dp_honey_lite_v3_selector_window_grouped_binary_tasks_readout_window_layer_15_v1_summary.md \
+  --activation-feature readout_window_layer_15 \
+  --folds 5
+```
+
+Generate and evaluate the hard V4 mode_b selector-window control:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/sheep/Desktop/Gauntlet/Capstone/introspection/src \
+  /Users/sheep/Desktop/Gauntlet/Capstone/.venv-introspection/bin/python introspection/scripts/generate_dp_honey_lite_prompts.py \
+  --template-set hard_v4 \
+  --seed capstone-hard-v4 \
+  --examples-per-template 4 \
+  --readout-width 6
+```
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/sheep/Desktop/Gauntlet/Capstone/introspection/src \
+  /Users/sheep/Desktop/Gauntlet/Capstone/.venv-introspection/bin/python introspection/scripts/generate_v3_policy_window_prompts.py \
+  --input introspection/data/prompts_dp_honey_lite_v4.jsonl \
+  --output introspection/data/prompts_dp_honey_lite_v4_selector_windows.jsonl \
+  --window-kind selector
+```
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/sheep/Desktop/Gauntlet/Capstone/introspection/src \
+  /Users/sheep/Desktop/Gauntlet/Capstone/.venv-introspection/bin/python introspection/scripts/generate_v3_policy_window_prompts.py \
+  --input introspection/data/prompts_dp_honey_lite_v4.jsonl \
+  --output introspection/data/prompts_dp_honey_lite_v4_policy_windows.jsonl \
+  --window-kind decision_path
+```
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/sheep/Desktop/Gauntlet/Capstone/introspection/src \
+  /Users/sheep/Desktop/Gauntlet/Capstone/.venv-introspection/bin/python introspection/scripts/extract_activations.py \
+  --prompts introspection/data/prompts_dp_honey_lite_v4_selector_windows.jsonl \
+  --output introspection/data/activations/qwen3_0_6b_dp_honey_lite_v4_selector_windows.pt \
+  --layers 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28 \
+  --pooling readout_window
+```
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/sheep/Desktop/Gauntlet/Capstone/introspection/src \
+  /Users/sheep/Desktop/Gauntlet/Capstone/.venv-introspection/bin/python introspection/scripts/sweep_binary_layers.py \
+  --artifact introspection/data/activations/qwen3_0_6b_dp_honey_lite_v4_selector_windows.pt \
+  --output-json introspection/data/reports/dp_honey_lite_v4_selector_window_sweep_safe_secret_vs_exfiltration_v1.json \
+  --output-md introspection/data/reports/dp_honey_lite_v4_selector_window_sweep_safe_secret_vs_exfiltration_v1_summary.md \
+  --task safe_secret_vs_exfiltration \
+  --reference-feature readout_window_layer_15 \
+  --folds 5
+```
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/sheep/Desktop/Gauntlet/Capstone/introspection/src \
+  /Users/sheep/Desktop/Gauntlet/Capstone/.venv-introspection/bin/python introspection/scripts/train_grouped_binary_tasks.py \
+  --artifact introspection/data/activations/qwen3_0_6b_dp_honey_lite_v4_selector_windows.pt \
+  --output-json introspection/data/reports/dp_honey_lite_v4_selector_window_grouped_binary_tasks_readout_window_layer_15_v1.json \
+  --output-md introspection/data/reports/dp_honey_lite_v4_selector_window_grouped_binary_tasks_readout_window_layer_15_v1_summary.md \
+  --activation-feature readout_window_layer_15 \
+  --folds 5
+```
+
+Generate and evaluate the hard V4.1 relational selector-window checkpoint:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/sheep/Desktop/Gauntlet/Capstone/introspection/src \
+  /Users/sheep/Desktop/Gauntlet/Capstone/.venv-introspection/bin/python introspection/scripts/generate_dp_honey_lite_prompts.py \
+  --template-set hard_v4_1 \
+  --seed capstone-hard-v4-1 \
+  --examples-per-template 4 \
+  --readout-width 6
+```
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/sheep/Desktop/Gauntlet/Capstone/introspection/src \
+  /Users/sheep/Desktop/Gauntlet/Capstone/.venv-introspection/bin/python introspection/scripts/generate_v3_policy_window_prompts.py \
+  --input introspection/data/prompts_dp_honey_lite_v4_1.jsonl \
+  --output introspection/data/prompts_dp_honey_lite_v4_1_selector_windows.jsonl \
+  --window-kind selector
+```
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/sheep/Desktop/Gauntlet/Capstone/introspection/src \
+  /Users/sheep/Desktop/Gauntlet/Capstone/.venv-introspection/bin/python introspection/scripts/generate_v3_policy_window_prompts.py \
+  --input introspection/data/prompts_dp_honey_lite_v4_1.jsonl \
+  --output introspection/data/prompts_dp_honey_lite_v4_1_policy_windows.jsonl \
+  --window-kind decision_path
+```
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/sheep/Desktop/Gauntlet/Capstone/introspection/src \
+  /Users/sheep/Desktop/Gauntlet/Capstone/.venv-introspection/bin/python introspection/scripts/extract_activations.py \
+  --prompts introspection/data/prompts_dp_honey_lite_v4_1_selector_windows.jsonl \
+  --output introspection/data/activations/qwen3_0_6b_dp_honey_lite_v4_1_selector_windows.pt \
+  --layers 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28 \
+  --pooling readout_window
+```
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/sheep/Desktop/Gauntlet/Capstone/introspection/src \
+  /Users/sheep/Desktop/Gauntlet/Capstone/.venv-introspection/bin/python introspection/scripts/sweep_binary_layers.py \
+  --artifact introspection/data/activations/qwen3_0_6b_dp_honey_lite_v4_1_selector_windows.pt \
+  --output-json introspection/data/reports/dp_honey_lite_v4_1_selector_window_sweep_safe_secret_vs_exfiltration_v1.json \
+  --output-md introspection/data/reports/dp_honey_lite_v4_1_selector_window_sweep_safe_secret_vs_exfiltration_v1_summary.md \
+  --task safe_secret_vs_exfiltration \
+  --reference-feature readout_window_layer_15 \
+  --folds 5
+```
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/sheep/Desktop/Gauntlet/Capstone/introspection/src \
+  /Users/sheep/Desktop/Gauntlet/Capstone/.venv-introspection/bin/python introspection/scripts/train_grouped_binary_tasks.py \
+  --artifact introspection/data/activations/qwen3_0_6b_dp_honey_lite_v4_1_selector_windows.pt \
+  --output-json introspection/data/reports/dp_honey_lite_v4_1_selector_window_grouped_binary_tasks_readout_window_layer_15_v1.json \
+  --output-md introspection/data/reports/dp_honey_lite_v4_1_selector_window_grouped_binary_tasks_readout_window_layer_15_v1_summary.md \
+  --activation-feature readout_window_layer_15 \
+  --folds 5
+```
+
+Run selector-window error analysis and metadata slices:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/sheep/Desktop/Gauntlet/Capstone/introspection/src \
+  /Users/sheep/Desktop/Gauntlet/Capstone/.venv-introspection/bin/python introspection/scripts/analyze_binary_errors.py \
+  --artifact introspection/data/activations/qwen3_0_6b_dp_honey_lite_v3_selector_windows.pt \
+  --output-json introspection/data/reports/dp_honey_lite_v3_selector_window_error_analysis_readout_window_layer_15_v1.json \
+  --output-md introspection/data/reports/dp_honey_lite_v3_selector_window_error_analysis_readout_window_layer_15_v1_summary.md \
+  --activation-feature readout_window_layer_15 \
+  --folds 5
+```
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/sheep/Desktop/Gauntlet/Capstone/introspection/src \
+  /Users/sheep/Desktop/Gauntlet/Capstone/.venv-introspection/bin/python introspection/scripts/summarize_policy_window_errors.py \
+  --prompts introspection/data/prompts_dp_honey_lite_v3_selector_windows.jsonl \
+  --error-report introspection/data/reports/dp_honey_lite_v3_selector_window_error_analysis_readout_window_layer_15_v1.json \
+  --output-json introspection/data/reports/dp_honey_lite_v3_selector_window_error_slices_readout_window_layer_15_v1.json \
+  --output-md introspection/data/reports/dp_honey_lite_v3_selector_window_error_slices_readout_window_layer_15_v1_summary.md \
+  --task safe_secret_vs_exfiltration \
+  --method activation_probe
+```
+
+Export selector-window rows into Aegis runtime-spine `NormalizedTurn` shape:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/sheep/Desktop/Gauntlet/Capstone/introspection/src \
+  /Users/sheep/Desktop/Gauntlet/Capstone/.venv-introspection/bin/python introspection/scripts/export_runtime_turns.py \
+  --input introspection/data/prompts_dp_honey_lite_v3_selector_windows.jsonl \
+  --output introspection/data/runtime_turns_dp_honey_lite_v3_selector_windows.jsonl \
+  --capability-mode offline_eval \
+  --model-provider huggingface \
+  --model-id Qwen/Qwen3-0.6B \
+  --revision main \
+  --selected-device cpu \
+  --sensitive-source dp_honey_lite \
+  --session-id introspection-offline-eval
+```
+
+Export selector-window activation predictions into Aegis
+`DetectorResult` shape:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/sheep/Desktop/Gauntlet/Capstone/introspection/src \
+  /Users/sheep/Desktop/Gauntlet/Capstone/.venv-introspection/bin/python introspection/scripts/export_cift_detector_results.py \
+  --runtime-turns introspection/data/runtime_turns_dp_honey_lite_v3_selector_windows.jsonl \
+  --error-report introspection/data/reports/dp_honey_lite_v3_selector_window_error_analysis_readout_window_layer_15_v1.json \
+  --output introspection/data/detector_results_cift_v3_selector_window_layer_15_v1.jsonl \
+  --task safe_secret_vs_exfiltration \
+  --method activation_probe \
+  --detector-name cift_selector_probe \
+  --feature-key readout_window_layer_15 \
+  --probe-version dp_honey_lite_v3_selector_window_layer_15_v1 \
+  --capability-required self_hosted_introspection \
+  --positive-label exfiltration_intent \
+  --positive-score 1.0 \
+  --negative-score 0.0 \
+  --positive-action warn \
+  --negative-action allow \
+  --confidence 0.7736
+```
+
+Calibrate selector-window CIFT detector scores with grouped outer folds and
+inner Platt calibration:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/sheep/Desktop/Gauntlet/Capstone/introspection/src \
+  /Users/sheep/Desktop/Gauntlet/Capstone/.venv-introspection/bin/python introspection/scripts/calibrate_cift_detector.py \
+  --artifact introspection/data/activations/qwen3_0_6b_dp_honey_lite_v3_selector_windows.pt \
+  --output-json introspection/data/reports/dp_honey_lite_v3_selector_window_cift_calibration_readout_window_layer_15_v1.json \
+  --output-markdown introspection/data/reports/dp_honey_lite_v3_selector_window_cift_calibration_readout_window_layer_15_v1_summary.md \
+  --task safe_secret_vs_exfiltration \
+  --positive-label exfiltration_intent \
+  --activation-feature readout_window_layer_15 \
+  --folds 5 \
+  --inner-folds 3 \
+  --seed 42 \
+  --max-iter 1000 \
+  --regularization-c 1.0 \
+  --decision-threshold 0.5
+```
+
+Export calibrated selector-window activation predictions into Aegis
+`DetectorResult` shape:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/sheep/Desktop/Gauntlet/Capstone/introspection/src \
+  /Users/sheep/Desktop/Gauntlet/Capstone/.venv-introspection/bin/python introspection/scripts/export_calibrated_cift_detector_results.py \
+  --runtime-turns introspection/data/runtime_turns_dp_honey_lite_v3_selector_windows.jsonl \
+  --calibration-report introspection/data/reports/dp_honey_lite_v3_selector_window_cift_calibration_readout_window_layer_15_v1.json \
+  --output introspection/data/detector_results_cift_v3_selector_window_layer_15_calibrated_v1.jsonl \
+  --detector-name cift_selector_probe \
+  --probe-version dp_honey_lite_v3_selector_window_layer_15_calibrated_v1 \
+  --capability-required self_hosted_introspection \
+  --positive-action warn \
+  --negative-action allow \
+  --confidence 0.7736
+```
+
+Summarize calibrated CIFT detector operating points:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/sheep/Desktop/Gauntlet/Capstone/introspection/src \
+  /Users/sheep/Desktop/Gauntlet/Capstone/.venv-introspection/bin/python introspection/scripts/summarize_cift_operating_points.py \
+  --calibration-report introspection/data/reports/dp_honey_lite_v3_selector_window_cift_calibration_readout_window_layer_15_v1.json \
+  --output-json introspection/data/reports/dp_honey_lite_v3_selector_window_cift_operating_points_readout_window_layer_15_v1.json \
+  --output-markdown introspection/data/reports/dp_honey_lite_v3_selector_window_cift_operating_points_readout_window_layer_15_v1_summary.md \
+  --thresholds 0.05:0.95:0.05
+```
+
+Diagnose calibrated selector-window CIFT scores by threshold margin and prompt
+slice:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/sheep/Desktop/Gauntlet/Capstone/introspection/src \
+  /Users/sheep/Desktop/Gauntlet/Capstone/.venv-introspection/bin/python introspection/scripts/diagnose_cift_selector_window_scores.py \
+  --prompts introspection/data/prompts_dp_honey_lite_v3_selector_windows.jsonl \
+  --calibration-report introspection/data/reports/dp_honey_lite_v3_selector_window_cift_calibration_readout_window_layer_15_v1.json \
+  --output-json introspection/data/reports/dp_honey_lite_v3_selector_window_score_diagnostics_readout_window_layer_15_v1.json \
+  --output-md introspection/data/reports/dp_honey_lite_v3_selector_window_score_diagnostics_readout_window_layer_15_v1_summary.md \
+  --near-threshold-radius 0.10
+```
+
+Ablate selector-window feature expressions:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/sheep/Desktop/Gauntlet/Capstone/introspection/src \
+  /Users/sheep/Desktop/Gauntlet/Capstone/.venv-introspection/bin/python introspection/scripts/ablate_cift_selector_window_features.py \
+  --artifact introspection/data/activations/qwen3_0_6b_dp_honey_lite_v3_selector_windows.pt \
+  --output-json introspection/data/reports/dp_honey_lite_v3_selector_window_feature_ablation_v1.json \
+  --output-md introspection/data/reports/dp_honey_lite_v3_selector_window_feature_ablation_v1_summary.md \
+  --task safe_secret_vs_exfiltration \
+  --baseline-variant baseline_layer_15 \
+  --folds 5
+```
+
+Calibrate and diagnose the best raw ablation variant:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/sheep/Desktop/Gauntlet/Capstone/introspection/src \
+  /Users/sheep/Desktop/Gauntlet/Capstone/.venv-introspection/bin/python introspection/scripts/calibrate_cift_detector.py \
+  --artifact introspection/data/activations/qwen3_0_6b_dp_honey_lite_v3_selector_windows.pt \
+  --output-json introspection/data/reports/dp_honey_lite_v3_selector_window_cift_calibration_selector_band_12_18_v1.json \
+  --output-markdown introspection/data/reports/dp_honey_lite_v3_selector_window_cift_calibration_selector_band_12_18_v1_summary.md \
+  --task safe_secret_vs_exfiltration \
+  --positive-label exfiltration_intent \
+  --activation-feature 'concat(readout_window_layer_12,readout_window_layer_13,readout_window_layer_14,readout_window_layer_15,readout_window_layer_16,readout_window_layer_17,readout_window_layer_18)' \
+  --folds 5 \
+  --inner-folds 3 \
+  --seed 42 \
+  --max-iter 1000 \
+  --regularization-c 1.0 \
+  --decision-threshold 0.5
+```
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/sheep/Desktop/Gauntlet/Capstone/introspection/src \
+  /Users/sheep/Desktop/Gauntlet/Capstone/.venv-introspection/bin/python introspection/scripts/summarize_cift_operating_points.py \
+  --calibration-report introspection/data/reports/dp_honey_lite_v3_selector_window_cift_calibration_selector_band_12_18_v1.json \
+  --output-json introspection/data/reports/dp_honey_lite_v3_selector_window_cift_operating_points_selector_band_12_18_v1.json \
+  --output-markdown introspection/data/reports/dp_honey_lite_v3_selector_window_cift_operating_points_selector_band_12_18_v1_summary.md \
+  --thresholds 0.05:0.95:0.05
+```
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/sheep/Desktop/Gauntlet/Capstone/introspection/src \
+  /Users/sheep/Desktop/Gauntlet/Capstone/.venv-introspection/bin/python introspection/scripts/diagnose_cift_selector_window_scores.py \
+  --prompts introspection/data/prompts_dp_honey_lite_v3_selector_windows.jsonl \
+  --calibration-report introspection/data/reports/dp_honey_lite_v3_selector_window_cift_calibration_selector_band_12_18_v1.json \
+  --output-json introspection/data/reports/dp_honey_lite_v3_selector_window_score_diagnostics_selector_band_12_18_v1.json \
+  --output-md introspection/data/reports/dp_honey_lite_v3_selector_window_score_diagnostics_selector_band_12_18_v1_summary.md \
+  --near-threshold-radius 0.10
 ```
 
 Extract all-layer activation features for the baseline dataset:
@@ -1210,7 +1738,25 @@ Key human-readable checkpoints:
 - `data/reports/dp_honey_lite_v3_grouped_binary_tasks_readout_window_layer_21_v1_summary.md`
 - `data/reports/dp_honey_lite_v3_policy_diagnostics_v1_summary.md`
 - `data/reports/dp_honey_lite_v3_policy_resolution_v1_summary.md`
+- `data/reports/dp_honey_lite_v3_policy_window_sweep_safe_secret_vs_exfiltration_v1_summary.md`
+- `data/reports/dp_honey_lite_v3_policy_window_grouped_binary_tasks_readout_window_layer_00_v1_summary.md`
+- `data/reports/dp_honey_lite_v3_selector_window_sweep_safe_secret_vs_exfiltration_v1_summary.md`
+- `data/reports/dp_honey_lite_v3_selector_window_grouped_binary_tasks_readout_window_layer_15_v1_summary.md`
+- `data/reports/dp_honey_lite_v3_selector_window_error_analysis_readout_window_layer_15_v1_summary.md`
+- `data/reports/dp_honey_lite_v3_selector_window_error_slices_readout_window_layer_15_v1_summary.md`
+- `data/reports/dp_honey_lite_v3_selector_window_cift_calibration_readout_window_layer_15_v1_summary.md`
+- `data/reports/dp_honey_lite_v3_selector_window_cift_operating_points_readout_window_layer_15_v1_summary.md`
+- `data/reports/dp_honey_lite_v3_selector_window_score_diagnostics_readout_window_layer_15_v1_summary.md`
+- `data/reports/dp_honey_lite_v3_selector_window_feature_ablation_v1_summary.md`
+- `data/reports/dp_honey_lite_v3_selector_window_cift_calibration_selector_band_12_18_v1_summary.md`
+- `data/reports/dp_honey_lite_v3_selector_window_cift_operating_points_selector_band_12_18_v1_summary.md`
+- `data/reports/dp_honey_lite_v3_selector_window_score_diagnostics_selector_band_12_18_v1_summary.md`
+- `data/reports/dp_honey_lite_v4_selector_window_sweep_safe_secret_vs_exfiltration_v1_summary.md`
+- `data/reports/dp_honey_lite_v4_selector_window_grouped_binary_tasks_readout_window_layer_15_v1_summary.md`
+- `data/reports/dp_honey_lite_v4_1_selector_window_sweep_safe_secret_vs_exfiltration_v1_summary.md`
+- `data/reports/dp_honey_lite_v4_1_selector_window_grouped_binary_tasks_readout_window_layer_15_v1_summary.md`
 - `data/reports/dp_honey_lite_v3_progress_2026-06-20.md`
+- `data/reports/dp_honey_lite_v3_selector_window_progress_2026-06-20.md`
 
 Key machine-readable reports registered in lineage:
 
@@ -1270,6 +1816,25 @@ Key machine-readable reports registered in lineage:
 - `data/reports/dp_honey_lite_v3_grouped_binary_tasks_readout_window_layer_21_v1.json`
 - `data/reports/dp_honey_lite_v3_policy_diagnostics_v1.json`
 - `data/reports/dp_honey_lite_v3_policy_resolution_v1.json`
+- `data/reports/dp_honey_lite_v3_policy_window_sweep_safe_secret_vs_exfiltration_v1.json`
+- `data/reports/dp_honey_lite_v3_policy_window_grouped_binary_tasks_readout_window_layer_00_v1.json`
+- `data/reports/dp_honey_lite_v3_selector_window_sweep_safe_secret_vs_exfiltration_v1.json`
+- `data/reports/dp_honey_lite_v3_selector_window_grouped_binary_tasks_readout_window_layer_15_v1.json`
+- `data/reports/dp_honey_lite_v3_selector_window_error_analysis_readout_window_layer_15_v1.json`
+- `data/reports/dp_honey_lite_v3_selector_window_error_slices_readout_window_layer_15_v1.json`
+- `data/reports/dp_honey_lite_v3_selector_window_cift_calibration_readout_window_layer_15_v1.json`
+- `data/reports/dp_honey_lite_v3_selector_window_cift_operating_points_readout_window_layer_15_v1.json`
+- `data/reports/dp_honey_lite_v3_selector_window_score_diagnostics_readout_window_layer_15_v1.json`
+- `data/reports/dp_honey_lite_v3_selector_window_feature_ablation_v1.json`
+- `data/reports/dp_honey_lite_v3_selector_window_cift_calibration_selector_band_12_18_v1.json`
+- `data/reports/dp_honey_lite_v3_selector_window_cift_operating_points_selector_band_12_18_v1.json`
+- `data/reports/dp_honey_lite_v3_selector_window_score_diagnostics_selector_band_12_18_v1.json`
+- `data/reports/dp_honey_lite_v4_selector_window_sweep_safe_secret_vs_exfiltration_v1.json`
+- `data/reports/dp_honey_lite_v4_selector_window_grouped_binary_tasks_readout_window_layer_15_v1.json`
+- `data/reports/dp_honey_lite_v4_1_selector_window_sweep_safe_secret_vs_exfiltration_v1.json`
+- `data/reports/dp_honey_lite_v4_1_selector_window_grouped_binary_tasks_readout_window_layer_15_v1.json`
+- `data/detector_results_cift_v3_selector_window_layer_15_v1.jsonl`
+- `data/detector_results_cift_v3_selector_window_layer_15_calibrated_v1.jsonl`
 
 ## Next Moves
 
@@ -1288,13 +1853,27 @@ Recommended sequence:
    final-token candidates remain under evaluation.
 4. Define a promotion rule that weighs average performance, worst-case
    checkpoint performance, and post-hoc discovery risk.
-5. For CIFT-like work, treat `meta_c_10` raw full dual-readout as the current
-   regularized diagnostic target. The V1, V2, and V3 DP-HONEY-lite artifacts
-   now exist. V3 breaks the target-task text shortcut, V3.1 shows the
-   selected-mode policy rule is parser-recoverable, and V3.2 shows Qwen 0.6B
-   is copy-biased when asked to resolve the rule directly. The next DP-HONEY-lite
-   step is either a clearer model-facing policy-resolution prompt or a simpler
-   symbolic-policy dataset before investing further in readout localization.
+5. For CIFT-like work, treat `meta_c_10` raw full dual-readout as the historical
+   regularized diagnostic target, and treat V3 selector-window layer 15 as the
+   current DP-HONEY-lite localization checkpoint. The V1, V2, V3, policy-window,
+   and selector-window artifacts now exist. V3 breaks the target-task text
+   shortcut, V3.1 shows the selected-mode policy rule is parser-recoverable,
+   V3.2 shows Qwen 0.6B is copy-biased when asked to resolve the rule directly,
+   and V3.3 shows that selector-localized readout windows recover a stronger
+   activation signal without using the explicit copy/mask decision text. The
+   feature-expression ablation shows layers 12-18 contain useful additional raw
+   signal, but the calibrated `selector_band_12_18` variant does not beat the
+   calibrated layer-15 checkpoint and increases confident errors. Keep layer 15
+   as the current calibrated checkpoint. Use the ablation result as a clue for
+   future representation work. V4 then isolated the same failure families and
+   forced `selected_mode = mode_b`, but it made the task text-baseline
+   recoverable: both activation and word TF-IDF reached 1.0000 macro F1. Treat
+   V4 as a targeted control, not a detector benchmark. V4.1 keeps the focused
+   failure families but restores balanced selected modes and stable per-family
+   policy maps, removing the full-prompt lexical shortcut. On V4.1, layer 15
+   reaches 0.7646 macro F1 while word TF-IDF drops to 0.1172. The next CIFT move
+   is V4.1 error analysis, calibration, and operating-point review before any
+   runtime-facing bridge export is refreshed.
 6. Keep registering every dataset, artifact, and machine-readable report in
    `data/lineage.json`.
 
