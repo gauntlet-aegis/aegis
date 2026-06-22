@@ -27,7 +27,8 @@ CLI_COMMANDS = [
     "auto-decoy",
 ]
 
-OUT_OF_SCOPE_KEYWORDS = ["calibration", "accounting", "gateway", "tool-call"]
+OUT_OF_SCOPE_KEYWORDS = ["cross-turn", "tool-call"]
+IN_SCOPE_KEYWORDS = ["scan_planted_values", "conformal", "eq.5", "dp_honey_stage"]
 
 # Matches a compatibility-matrix row whose first cell is a backtick-wrapped slug.
 _ROW = re.compile(r"(?m)^\|\s*`([a-z0-9-]+)`\s*\|.*$")
@@ -62,6 +63,12 @@ def test_readme_states_out_of_scope_components():
     lowered = _readme_text().lower()
     assert "out of scope" in lowered
     for keyword in OUT_OF_SCOPE_KEYWORDS:
+        assert keyword in lowered, keyword
+
+
+def test_readme_states_planted_scanner_calibration_and_accounting_are_in_scope():
+    lowered = _readme_text().lower()
+    for keyword in IN_SCOPE_KEYWORDS:
         assert keyword in lowered, keyword
 
 
