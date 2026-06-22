@@ -1,0 +1,14 @@
+# Aegis dashboard theme — dark "security console" aesthetic (matches the approved Figma mocks).
+# Palette mirrors dashboard/app.py and dashboard/data.py ACTION_META.
+[theme]
+base = "dark"
+backgroundColor = "#0E1117"
+secondaryBackgroundColor = "#161B22"
+textColor = "#E6EDF3"
+primaryColor = "#58A6FF"
+
+[server]
+headless = true
+
+[browser]
+gatherUsageStats = false
