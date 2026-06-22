@@ -32,6 +32,8 @@ aegis-trace-assignments = "aegis.trace_collection.__main__:main"
 aegis-trace-build-records = "aegis.trace_collection.main:record_builder_main"
 aegis-trace-seed-inputs = "aegis.trace_collection.main:seed_input_main"
 aegis-trace-validate-pairs = "aegis.trace_collection.main:pair_validation_main"
+aegis-trace-pair-work-items = "aegis.trace_collection.main:pair_work_item_main"
+aegis-trace-build-pair-inputs = "aegis.trace_collection.main:pair_input_builder_main"
 dp-honey = "detect.dp_honey.__main__:main"
 dp-honey-ui = "detect.dp_honey.webui.__main__:main"
 

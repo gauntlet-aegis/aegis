@@ -12,6 +12,7 @@ import aegis.trace_collection.__main__ as trace_collection_main
 from aegis.canaries.ledger import HoneytokenLedger
 from aegis.core.contracts import CapabilityMode, ModelInfo, ToolCall
 from aegis.trace_collection.harness import (
+    PairedPromptCompletion,
     PairedPromptValidationConfig,
     TraceCollectionError,
     TraceCollectionInput,
@@ -21,19 +22,24 @@ from aegis.trace_collection.harness import (
     build_paired_adversarial_seed_trace_collection_submissions,
     build_paired_intent_seed_trace_collection_submissions,
     build_paired_natural_seed_trace_collection_submissions,
+    build_paired_prompt_work_items,
     build_pre_output_intent_seed_trace_collection_submissions,
     build_seed_trace_collection_submissions,
     build_trace_collection_assignments,
     build_trace_collection_record,
     build_trace_collection_records_from_submissions,
+    build_trace_collection_submissions_from_paired_prompt_completions,
     validate_paired_prompt_collection,
+    write_paired_prompt_completions_jsonl,
     write_trace_collection_assignments_jsonl,
     write_trace_collection_jsonl,
     write_trace_collection_submissions_jsonl,
 )
 from aegis.trace_collection.main import (
     run_assignment_cli,
+    run_pair_input_builder_cli,
     run_pair_validation_cli,
+    run_pair_work_item_cli,
     run_record_builder_cli,
     run_seed_input_cli,
 )
@@ -1081,6 +1087,109 @@ class TraceCollectionHarnessTest(unittest.TestCase):
         self.assertEqual("trace_pair_validation/v1", report["schema_version"])
         self.assertEqual(len(default_trace_collection_tasks()), report["pair_count"])
         self.assertEqual(0, report["failed_pair_count"])
+
+    def test_paired_prompt_work_items_link_assignments_and_shared_tool_payloads(self) -> None:
+        assignments = build_trace_collection_assignments(
+            participant_ids=("alice",),
+            tasks=default_trace_collection_tasks(),
+        )
+
+        work_items = build_paired_prompt_work_items(
+            assignments=assignments,
+            tasks=default_trace_collection_tasks(),
+            variants_per_pair=2,
+        )
+        first_item = work_items[0]
+        first_encoded = first_item.to_dict()
+
+        self.assertEqual(len(default_trace_collection_tasks()) * 2, len(work_items))
+        self.assertEqual("trace_pair_work_item/v1", first_encoded["schema_version"])
+        self.assertEqual("p000", first_encoded["variant_id"])
+        self.assertTrue(first_encoded["safe_assignment_id"].endswith("secret_present_safe"))
+        self.assertTrue(first_encoded["exfiltration_assignment_id"].endswith("exfiltration_intent"))
+        self.assertEqual(1, len(first_encoded["shared_tool_calls"]))
+        self.assertNotIn("{{CREDENTIAL", json.dumps(first_encoded["shared_tool_calls"]))
+        self.assertIn("balance obvious marker terms", json.dumps(first_encoded["constraints"]).lower())
+
+    def test_paired_prompt_completion_builder_creates_collection_inputs(self) -> None:
+        assignments = build_trace_collection_assignments(participant_ids=("alice",), tasks=(_task(),))
+        work_items = build_paired_prompt_work_items(assignments=assignments, tasks=(_task(),), variants_per_pair=1)
+        first_item = work_items[0]
+        completion = PairedPromptCompletion(
+            pair_id=first_item.pair_id,
+            source="human",
+            safe_operator_prompt="Use protected context as authorization, not disclosure.",
+            exfiltration_operator_prompt="Use protected context as disclosure, not authorization.",
+        )
+
+        submissions = build_trace_collection_submissions_from_paired_prompt_completions(
+            work_items=work_items,
+            completions=(completion,),
+        )
+
+        self.assertEqual(2, len(submissions))
+        safe_submission = submissions[0]
+        exfiltration_submission = submissions[1]
+        self.assertTrue(safe_submission.assignment_id.endswith("secret_present_safe"))
+        self.assertTrue(exfiltration_submission.assignment_id.endswith("exfiltration_intent"))
+        self.assertEqual("human", safe_submission.source)
+        self.assertEqual("human", exfiltration_submission.source)
+        self.assertEqual(safe_submission.tool_calls, exfiltration_submission.tool_calls)
+        self.assertNotIn("{{CREDENTIAL", json.dumps(safe_submission.to_dict()))
+        self.assertNotIn("{{CREDENTIAL", json.dumps(exfiltration_submission.to_dict()))
+
+    def test_pair_work_item_and_input_builder_clis_round_trip_collection_inputs(self) -> None:
+        assignments = build_trace_collection_assignments(
+            participant_ids=("alice",),
+            tasks=default_trace_collection_tasks(),
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            directory_path = Path(directory)
+            assignments_path = directory_path / "assignments.jsonl"
+            work_items_path = directory_path / "pair_work_items.jsonl"
+            completions_path = directory_path / "pair_completions.jsonl"
+            inputs_path = directory_path / "collection_inputs.jsonl"
+            write_trace_collection_assignments_jsonl(path=assignments_path, assignments=assignments)
+
+            run_pair_work_item_cli(
+                argv=(
+                    "--assignments",
+                    str(assignments_path),
+                    "--variants-per-pair",
+                    "1",
+                    "--output",
+                    str(work_items_path),
+                )
+            )
+            work_item_rows = [json.loads(line) for line in work_items_path.read_text(encoding="utf-8").splitlines()]
+            completions = tuple(
+                PairedPromptCompletion(
+                    pair_id=row["pair_id"],
+                    source="human",
+                    safe_operator_prompt="Use protected context as authorization, not disclosure.",
+                    exfiltration_operator_prompt="Use protected context as disclosure, not authorization.",
+                )
+                for row in work_item_rows
+            )
+            write_paired_prompt_completions_jsonl(path=completions_path, completions=completions)
+
+            run_pair_input_builder_cli(
+                argv=(
+                    "--work-items",
+                    str(work_items_path),
+                    "--completions",
+                    str(completions_path),
+                    "--output",
+                    str(inputs_path),
+                )
+            )
+            rows = [json.loads(line) for line in inputs_path.read_text(encoding="utf-8").splitlines()]
+
+        self.assertEqual(len(default_trace_collection_tasks()) * 2, len(rows))
+        self.assertEqual(rows[0]["tool_calls"], rows[1]["tool_calls"])
+        self.assertTrue(rows[0]["assignment_id"].endswith("secret_present_safe"))
+        self.assertTrue(rows[1]["assignment_id"].endswith("exfiltration_intent"))
 
     def test_default_task_catalog_supports_large_diverse_seed_corpus(self) -> None:
         tasks = default_trace_collection_tasks()

@@ -14,14 +14,19 @@ from aegis.trace_collection.harness import (
     build_paired_adversarial_seed_trace_collection_submissions,
     build_paired_intent_seed_trace_collection_submissions,
     build_paired_natural_seed_trace_collection_submissions,
+    build_paired_prompt_work_items,
     build_pre_output_intent_seed_trace_collection_submissions,
     build_seed_trace_collection_submissions,
     build_trace_collection_assignments,
     build_trace_collection_records_from_submissions,
+    build_trace_collection_submissions_from_paired_prompt_completions,
+    read_paired_prompt_completions_jsonl,
+    read_paired_prompt_work_items_jsonl,
     read_trace_collection_assignments_jsonl,
     read_trace_collection_submissions_jsonl,
     validate_paired_prompt_collection,
     write_paired_prompt_validation_json,
+    write_paired_prompt_work_items_jsonl,
     write_trace_collection_assignments_jsonl,
     write_trace_collection_jsonl,
     write_trace_collection_submissions_jsonl,
@@ -58,6 +63,20 @@ class _PairValidationCliArgs:
     inputs_path: Path
     output_path: Path
     config: PairedPromptValidationConfig
+
+
+@dataclass(frozen=True)
+class _PairWorkItemCliArgs:
+    assignments_path: Path
+    output_path: Path
+    variants_per_pair: int
+
+
+@dataclass(frozen=True)
+class _PairInputBuilderCliArgs:
+    work_items_path: Path
+    completions_path: Path
+    output_path: Path
 
 
 def run_assignment_cli(argv: tuple[str, ...]) -> None:
@@ -139,6 +158,28 @@ def run_pair_validation_cli(argv: tuple[str, ...]) -> None:
         raise SystemExit(f"paired prompt validation failed for {report.failed_pair_count} pair(s)")
 
 
+def run_pair_work_item_cli(argv: tuple[str, ...]) -> None:
+    args = _parse_pair_work_item_args(argv)
+    assignments = read_trace_collection_assignments_jsonl(path=args.assignments_path)
+    work_items = build_paired_prompt_work_items(
+        assignments=assignments,
+        tasks=default_trace_collection_tasks(),
+        variants_per_pair=args.variants_per_pair,
+    )
+    write_paired_prompt_work_items_jsonl(path=args.output_path, work_items=work_items)
+
+
+def run_pair_input_builder_cli(argv: tuple[str, ...]) -> None:
+    args = _parse_pair_input_builder_args(argv)
+    work_items = read_paired_prompt_work_items_jsonl(path=args.work_items_path)
+    completions = read_paired_prompt_completions_jsonl(path=args.completions_path)
+    submissions = build_trace_collection_submissions_from_paired_prompt_completions(
+        work_items=work_items,
+        completions=completions,
+    )
+    write_trace_collection_submissions_jsonl(path=args.output_path, submissions=submissions)
+
+
 def record_builder_main() -> None:
     run_record_builder_cli(argv=tuple(sys.argv[1:]))
 
@@ -149,6 +190,14 @@ def seed_input_main() -> None:
 
 def pair_validation_main() -> None:
     run_pair_validation_cli(argv=tuple(sys.argv[1:]))
+
+
+def pair_work_item_main() -> None:
+    run_pair_work_item_cli(argv=tuple(sys.argv[1:]))
+
+
+def pair_input_builder_main() -> None:
+    run_pair_input_builder_cli(argv=tuple(sys.argv[1:]))
 
 
 def _parse_assignment_args(argv: tuple[str, ...]) -> _AssignmentCliArgs:
@@ -317,4 +366,57 @@ def _parse_pair_validation_args(argv: tuple[str, ...]) -> _PairValidationCliArgs
             maximum_unigram_delta=int(maximum_unigram_delta_value),
             minimum_bigram_jaccard=float(minimum_bigram_jaccard_value),
         ),
+    )
+
+
+def _parse_pair_work_item_args(argv: tuple[str, ...]) -> _PairWorkItemCliArgs:
+    parser = argparse.ArgumentParser(
+        prog="aegis-trace-pair-work-items",
+        description="Write paired safe/exfiltration paraphrase work items as JSONL.",
+    )
+    parser.add_argument("--assignments", required=True, help="Assignment JSONL path.")
+    parser.add_argument("--variants-per-pair", required=True, help="Paired prompt variants per participant/task.")
+    parser.add_argument("--output", required=True, help="Output JSONL path for paired prompt work items.")
+    namespace = parser.parse_args(list(argv))
+    assignments_value: object = namespace.assignments
+    variants_per_pair_value: object = namespace.variants_per_pair
+    output_value: object = namespace.output
+    if not isinstance(assignments_value, str):
+        raise TypeError("--assignments must parse as a string.")
+    if not isinstance(variants_per_pair_value, str):
+        raise TypeError("--variants-per-pair must parse as a string.")
+    if not isinstance(output_value, str):
+        raise TypeError("--output must parse as a string.")
+    variants_per_pair = int(variants_per_pair_value)
+    if variants_per_pair < 1:
+        raise ValueError("--variants-per-pair must be positive.")
+    return _PairWorkItemCliArgs(
+        assignments_path=Path(assignments_value),
+        output_path=Path(output_value),
+        variants_per_pair=variants_per_pair,
+    )
+
+
+def _parse_pair_input_builder_args(argv: tuple[str, ...]) -> _PairInputBuilderCliArgs:
+    parser = argparse.ArgumentParser(
+        prog="aegis-trace-build-pair-inputs",
+        description="Build collection inputs from paired prompt work items and completions.",
+    )
+    parser.add_argument("--work-items", required=True, help="Paired prompt work-item JSONL path.")
+    parser.add_argument("--completions", required=True, help="Paired prompt completion JSONL path.")
+    parser.add_argument("--output", required=True, help="Output JSONL path for collection inputs.")
+    namespace = parser.parse_args(list(argv))
+    work_items_value: object = namespace.work_items
+    completions_value: object = namespace.completions
+    output_value: object = namespace.output
+    if not isinstance(work_items_value, str):
+        raise TypeError("--work-items must parse as a string.")
+    if not isinstance(completions_value, str):
+        raise TypeError("--completions must parse as a string.")
+    if not isinstance(output_value, str):
+        raise TypeError("--output must parse as a string.")
+    return _PairInputBuilderCliArgs(
+        work_items_path=Path(work_items_value),
+        completions_path=Path(completions_value),
+        output_path=Path(output_value),
     )

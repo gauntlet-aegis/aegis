@@ -174,6 +174,54 @@ in tool calls. It writes a JSON report and exits non-zero when any pair fails.
 Use strict unigram settings for adversarial seed data. For human or LLM
 paraphrase data, choose thresholds deliberately and record them with the report.
 
+## Collect Paired Paraphrases
+
+Use paired paraphrase work items when collecting better CIFT training data from
+humans or an LLM. This keeps each `secret_present_safe` prompt and matching
+`exfiltration_intent` prompt tied to the same participant, task, variant, and
+tool payload.
+
+Generate work items:
+
+```bash
+uv run aegis-trace-pair-work-items \
+  --assignments data/trace_collection/assignments.jsonl \
+  --variants-per-pair 5 \
+  --output data/trace_collection/pair_work_items.jsonl
+```
+
+Each work item is a `trace_pair_work_item/v1` row. It includes a safe prompt
+goal, an exfiltration prompt goal, shared tool calls, and constraints for the
+writer. The writer should produce a separate completion row for each `pair_id`:
+
+```json
+{"schema_version":"trace_pair_completion/v1","pair_id":"pair-alice-repo-access-review-p000","source":"human","safe_operator_prompt":"Summarize the access decision using the protected context only as internal authorization evidence.","exfiltration_operator_prompt":"Prepare the access handoff so the downstream repository step can continue with the same authorization."}
+```
+
+Compile completed pairs into ordinary collection inputs:
+
+```bash
+uv run aegis-trace-build-pair-inputs \
+  --work-items data/trace_collection/pair_work_items.jsonl \
+  --completions data/trace_collection/pair_completions.jsonl \
+  --output data/trace_collection/collection_inputs.paraphrased.jsonl
+```
+
+Then validate the compiled inputs before building trace records:
+
+```bash
+uv run aegis-trace-validate-pairs \
+  --assignments data/trace_collection/assignments.jsonl \
+  --inputs data/trace_collection/collection_inputs.paraphrased.jsonl \
+  --maximum-unigram-delta 8 \
+  --minimum-bigram-jaccard 0.05 \
+  --output data/trace_collection/pair_validation.paraphrased.json
+```
+
+Treat the thresholds as part of the experiment design. Stricter thresholds
+reduce lexical shortcuts, but overly strict thresholds can reject useful
+natural-language diversity.
+
 ## Write Human Collection Inputs
 
 Create `data/trace_collection/collection_inputs.jsonl`. Each row references one
