@@ -164,6 +164,34 @@ class ToolCallArgumentScanner:
             if f is not None:
                 findings.append(f)
 
+        # Chunked-exfil check: a credential split across the leaves of one multi-valued field
+        # (e.g. body=[first_half, second_half]) slips past every per-leaf scan but reconstructs
+        # when that field's leaves are concatenated. Group leaves by top-level field and scan each
+        # field's reconstruction (only fields with >= 2 leaves; bounded size). Concatenating across
+        # *different* fields is avoided — it would glue unrelated values and break token boundaries.
+        if not any(f.matched_credential_pattern for f in findings):
+            by_field: dict[str, list[str]] = {}
+            for arg_name, value in items:
+                top = arg_name.split(".", 1)[0].split("[", 1)[0]
+                if value:
+                    by_field.setdefault(top, []).append(value)
+            for top, vals in by_field.items():
+                if len(vals) < 2:
+                    continue
+                combined = "".join(vals)
+                if 0 < len(combined) <= 50_000 and (
+                    find_secrets(combined) or any(find_secrets(d) for d in decodings(combined))
+                ):
+                    findings.append(
+                        ArgFinding(
+                            tool=tool, arg=top, value_preview=_preview(combined),
+                            risk_reason="credential reconstructed across chunked tool-argument leaves",
+                            matched_credential_pattern=True, encoding="verbatim",
+                            action=Action.BLOCK, verdict=Verdict.MALICIOUS, score=0.95, confidence=0.9,
+                        )
+                    )
+                    break
+
         # Schema-level finding: top-level fields present that the tool does not declare.
         present_top = {a.split(".", 1)[0].split("[", 1)[0] for a, _ in items}
         for extra in sorted(present_top - set(schema.fields)):

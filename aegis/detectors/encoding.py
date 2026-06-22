@@ -19,8 +19,11 @@ import urllib.parse
 
 from aegis.decision import Action, Phase, Verdict
 from aegis.detectors.base import DetectorResult
+from aegis.detectors.normalize import nfkc_strip
 from aegis.detectors.secret_pattern import find_secrets
 from aegis.events import AegisEvent
+
+_MAX_DECODE_DEPTH = 2  # follow base64-of-base64(-of-base64) nesting; bounded by the [:8] fan-out
 
 _B64_RUN = re.compile(r"[A-Za-z0-9+/]{16,}={0,2}")
 _HEX_RUN = re.compile(r"(?:[0-9a-fA-F]{2}){8,}")
@@ -44,6 +47,11 @@ def decodings(text: str, *, _depth: int = 0) -> set[str]:
     out: set[str] = set()
     if not text:
         return out
+
+    # Unicode canonicalization: undo homoglyph / zero-width splicing so a decoded secret matches.
+    normalized = nfkc_strip(text)
+    if normalized != text:
+        out.add(normalized)
 
     # Whole-string reversible transforms.
     out.add(text[::-1])
@@ -84,11 +92,12 @@ def decodings(text: str, *, _depth: int = 0) -> set[str]:
 
     out.discard(text)
 
-    # One nested level (e.g. base64 of a hex string) — bounded to avoid blowup.
-    if _depth == 0:
+    # Follow nested encodings (e.g. base64 of base64, or base64 of a hex string) up to
+    # _MAX_DECODE_DEPTH levels — bounded by the [:8] fan-out at each level to avoid blowup.
+    if _depth < _MAX_DECODE_DEPTH:
         nested: set[str] = set()
         for d in list(out)[:8]:
-            nested |= decodings(d, _depth=1)
+            nested |= decodings(d, _depth=_depth + 1)
         out |= nested
         out.discard(text)
     return out

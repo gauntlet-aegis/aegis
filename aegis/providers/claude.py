@@ -59,7 +59,13 @@ class ClaudeProvider:
         self, messages: list[dict], tools: list[dict] | None = None
     ) -> ProviderResponse:
         client = self._ensure_client()
-        kwargs: dict = {"model": self.model, "max_tokens": self.max_tokens, "messages": messages}
+        # The Anthropic Messages API takes the system prompt as a top-level `system=` argument, not
+        # as a role:"system" message — forwarding a system message verbatim 400s. Hoist them out.
+        system_parts = [str(m.get("content", "")) for m in messages if m.get("role") == "system"]
+        chat = [m for m in messages if m.get("role") != "system"]
+        kwargs: dict = {"model": self.model, "max_tokens": self.max_tokens, "messages": chat}
+        if system_parts:
+            kwargs["system"] = "\n\n".join(system_parts)
         if tools:
             kwargs["tools"] = tools
         resp = client.messages.create(**kwargs)

@@ -26,14 +26,21 @@ _REDACT_PATTERNS = [
 ]
 
 REDACTED = "[REDACTED]"
+# Don't substring-redact store values shorter than this — a 1-2 char "secret" would shred every
+# unrelated occurrence and make traces unreadable (over-redaction). Short secrets aren't realistic.
+_MIN_REDACT_LEN = 4
 
 
 def redact(text: str, *, known_secrets: Iterable[str] = ()) -> str:
-    """Replace known secret values and credential-shaped substrings with ``[REDACTED]``."""
-    if not text:
+    """Replace known secret values and credential-shaped substrings with ``[REDACTED]``.
+
+    Non-string input is returned unchanged (never raises). Known secret values shorter than
+    :data:`_MIN_REDACT_LEN` are skipped to avoid catastrophic over-redaction.
+    """
+    if not isinstance(text, str) or not text:
         return text
     for secret in known_secrets:
-        if secret:
+        if isinstance(secret, str) and len(secret) >= _MIN_REDACT_LEN:
             text = text.replace(secret, REDACTED)
     for pat in _REDACT_PATTERNS:
         text = pat.sub(REDACTED, text)

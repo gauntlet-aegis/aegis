@@ -99,8 +99,16 @@ def create_app(
                 aegis={"request": _serialize_decision(request_decision)},
             )
 
-        # (b) Call the provider for the model turn (request already cleared).
-        provider_response = provider.complete(req.messages, req.tools)
+        # (b) Call the provider for the model turn (request already cleared). A provider failure
+        #     (network/timeout/upstream 500) returns a graceful refusal, never a bare gateway 500.
+        try:
+            provider_response = provider.complete(req.messages, req.tools)
+        except Exception:
+            return ChatResponse(
+                output="Upstream model provider error; the request was not completed.",
+                tool_calls=[],
+                aegis={"request": _serialize_decision(request_decision), "provider_error": True},
+            )
 
         # (c) Guard each tool call. Only allowed calls are forwarded; a blocked call is dropped
         #     before dispatch — the marquee exfiltration defense.

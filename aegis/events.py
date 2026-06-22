@@ -94,15 +94,25 @@ class AegisEvent(BaseModel):
                    metadata=metadata or {})
 
 
-def _flatten(obj, prefix: str = "") -> list[tuple[str, object]]:
-    """Flatten nested dicts/lists into dotted-path leaves, e.g. {'a': {'b': 1}} -> [('a.b', 1)]."""
+_MAX_FLATTEN_DEPTH = 60  # bound recursion: tool args are model/attacker-influenceable (never crash)
+
+
+def _flatten(obj, prefix: str = "", depth: int = 0) -> list[tuple[str, object]]:
+    """Flatten nested dicts/lists into dotted-path leaves, e.g. {'a': {'b': 1}} -> [('a.b', 1)].
+
+    Depth-bounded: a guard must never crash, and ``tool_arguments`` can be arbitrarily nested by an
+    injected model. Past :data:`_MAX_FLATTEN_DEPTH` the remaining structure is stringified as one
+    leaf rather than recursing into a ``RecursionError``.
+    """
     out: list[tuple[str, object]] = []
-    if isinstance(obj, dict):
+    if depth >= _MAX_FLATTEN_DEPTH:
+        out.append((prefix, str(obj)))
+    elif isinstance(obj, dict):
         for k, v in obj.items():
-            out.extend(_flatten(v, f"{prefix}.{k}" if prefix else str(k)))
+            out.extend(_flatten(v, f"{prefix}.{k}" if prefix else str(k), depth + 1))
     elif isinstance(obj, (list, tuple)):
         for i, v in enumerate(obj):
-            out.extend(_flatten(v, f"{prefix}[{i}]"))
+            out.extend(_flatten(v, f"{prefix}[{i}]", depth + 1))
     else:
         out.append((prefix, obj))
     return out

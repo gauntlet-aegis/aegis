@@ -105,7 +105,9 @@ class CredentialBroker:
             return None
 
         known = self.store.all_values()
-        present = [s for s in known if s and s in text]
+        # Require a minimum length before treating a store value as "present" by substring: a 1-2
+        # char value would match benign text everywhere and force a spurious ESCALATE.
+        present = [s for s in known if isinstance(s, str) and len(s) >= 4 and s in text]
         # The broker's forced, mode-bypassing escalation is reserved for an actual RAW STORE
         # SECRET leaking — that is the broker invariant. Generic credential *shapes* are the
         # secret_pattern detector's domain and flow through the normal, mode-governed policy, so

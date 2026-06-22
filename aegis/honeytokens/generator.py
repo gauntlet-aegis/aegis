@@ -55,10 +55,12 @@ def _join_prefix(prefix: str, body: str) -> str:
 
 def _build_jwt(prefix: str, body: str) -> str:
     """JWT-shaped canary: three base64url segments. Slice the generated body into 3 parts so the
-    whole token is still driven by the (DP-flavored) sampler."""
+    whole token is still driven by the (DP-flavored) sampler. The header segment is forced to start
+    with ``eyJ`` (base64 of ``{"``) so the canary matches real JWT shape detectors / redaction."""
     n = len(body)
     a, b = body[: n // 3], body[n // 3 : 2 * n // 3]
     c = body[2 * n // 3 :]
+    a = "eyJ" + (a[3:] if len(a) >= 3 else a)
     return f"{a}.{b}.{c}"
 
 

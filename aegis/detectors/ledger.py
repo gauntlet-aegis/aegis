@@ -40,6 +40,9 @@ _HAS_DIGIT = re.compile(r"[0-9]")
 # Per-turn tuning (normalized so budget defaults to 1.0).
 _FRAGMENT_INCREMENT = 0.15   # per NEW distinct fragment
 _MAX_FRAGMENTS_PER_TURN = 3  # cap a single turn's fragment contribution (3 * 0.15 = 0.45)
+# Bound retained per-session state so a long-lived guard process can't grow unboundedly across
+# many distinct session ids; the oldest session is evicted past this cap (FIFO).
+_MAX_SESSIONS = 50_000
 
 
 def _fragments(text: str) -> set[str]:
@@ -69,12 +72,16 @@ class LeakageLedger:
     """
 
     def __init__(self, budget: float = 1.0) -> None:
-        self.budget = float(budget)
+        # A non-positive budget would silently disable the detector (ratio always 0 -> ALLOW). Clamp
+        # to the default so a misconfiguration fails safe (still detecting) rather than blind.
+        self.budget = float(budget) if (budget is not None and budget > 0) else 1.0
         self._sessions: dict[str, _SessionState] = {}
 
     def _state(self, session_id: str) -> _SessionState:
         st = self._sessions.get(session_id)
         if st is None:
+            if len(self._sessions) >= _MAX_SESSIONS:
+                self._sessions.pop(next(iter(self._sessions)))  # evict oldest (FIFO)
             st = self._sessions[session_id] = _SessionState()
         return st
 

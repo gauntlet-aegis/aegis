@@ -39,13 +39,20 @@ class HoneytokenRegistry:
     def __init__(self) -> None:
         self._by_token: dict[str, Canary] = {}
         self._canaries: list[Canary] = []
+        self._counter = 0
 
     def register(self, service: str, fmt: str, location: str, *, session_id: str = "default",
                  seed: int | None = None) -> Canary:
         """Mint and plant a canary: generate a format-valid token for ``fmt`` and record where it
         was planted. ``location`` is the planting site (e.g. ``"system_prompt"``,
-        ``"tool:query_database"``)."""
-        token = generate(fmt, seed=seed)
+        ``"tool:query_database"``).
+
+        A per-registration counter is mixed into ``seed`` so two canaries registered with the same
+        ``fmt`` AND the same ``seed`` still get distinct tokens (otherwise the deterministic
+        generator would collide them and the token index would drop one)."""
+        self._counter += 1
+        effective_seed = None if seed is None else seed * 1_000_003 + self._counter
+        token = generate(fmt, seed=effective_seed)
         canary = Canary(token=token, service=service, fmt=fmt, location=location, session_id=session_id)
         self._by_token[token] = canary
         self._canaries.append(canary)

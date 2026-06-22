@@ -16,6 +16,7 @@ from pydantic import BaseModel
 
 from aegis.decision import Action, Phase, Verdict
 from aegis.detectors.base import DetectorResult
+from aegis.detectors.normalize import nfkc_strip
 from aegis.events import AegisEvent
 
 # (kind, compiled pattern). Order matters only for labelling; all are tried.
@@ -35,6 +36,9 @@ _PATTERNS: list[tuple[str, re.Pattern]] = [
 # flag them when an explicit credential cue is nearby, or when paired with an access-key id.
 _SECRET_KEY_KINDS = {"aws_secret_access_key"}
 _CREDENTIAL_CUE = re.compile(r"(?i)(secret|password|passwd|token|api[_-]?key|access[_-]?key|credential)")
+# A 40-char run that is ALL hexadecimal is almost certainly a SHA-1 / git sha / hex digest, not an
+# AWS secret key (which is base64 with mixed case). Excluding these cuts the common benign FP.
+_HEX_40 = re.compile(r"^[0-9a-fA-F]{40}$")
 
 # Known public documentation/example values that must never trip the scanner.
 _EXAMPLE_TOKENS = {
@@ -51,9 +55,14 @@ class SecretMatch(BaseModel):
 
 
 def find_secrets(text: str) -> list[SecretMatch]:
-    """Return all credential-shaped matches in ``text`` (never raises; example tokens excluded)."""
+    """Return all credential-shaped matches in ``text`` (never raises; example tokens excluded).
+
+    ``text`` is NFKC-normalized with zero-width characters stripped first, so a key hidden with
+    homoglyphs or a spliced-in zero-width space is still matched.
+    """
     if not text:
         return []
+    text = nfkc_strip(text)
     matches: list[SecretMatch] = []
     has_cue = bool(_CREDENTIAL_CUE.search(text))
     has_access_key = any(_PATTERNS[0][1].search(text) for _ in (0,))
@@ -62,9 +71,13 @@ def find_secrets(text: str) -> list[SecretMatch]:
             val = m.group(0)
             if val in _EXAMPLE_TOKENS:
                 continue
-            # Gate the noisy 40-char secret-key shape behind an explicit cue or a paired key id.
-            if kind in _SECRET_KEY_KINDS and not (has_cue or has_access_key):
-                continue
+            # Gate the noisy 40-char secret-key shape behind an explicit cue or a paired key id,
+            # and never treat an all-hex 40-char digest (SHA-1 / git sha) as an AWS secret key.
+            if kind in _SECRET_KEY_KINDS:
+                if not (has_cue or has_access_key):
+                    continue
+                if _HEX_40.match(val):
+                    continue
             matches.append(SecretMatch(kind=kind, value=val, start=m.start(), end=m.end()))
     return _dedupe(matches)
 

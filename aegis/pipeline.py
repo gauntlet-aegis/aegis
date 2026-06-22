@@ -43,11 +43,13 @@ class Pipeline:
                                                   score=0.0, verdict=Verdict.SKIPPED,
                                                   evidence={"error": str(exc)}))
 
-        # Broker guard: a raw secret in model-visible content forces a non-allow decision.
+        # Broker guard: a raw store secret reaching ANY boundary forces a non-allow decision.
+        # This includes TOOL_CALL — an opaque store secret (no credential *shape*) smuggled into a
+        # tool argument is exactly the marquee exfiltration path, so it must be scanned here too.
         broker_action = Action.ALLOW
         broker_reason: list[str] = []
         broker_finding = None
-        if self.broker is not None and event.phase in (Phase.REQUEST, Phase.RESPONSE):
+        if self.broker is not None and event.phase in (Phase.REQUEST, Phase.RESPONSE, Phase.TOOL_CALL):
             broker_finding = self.broker.scan_model_visible(event.inspectable_text())
             if broker_finding is not None and getattr(broker_finding, "leaked", False):
                 broker_action = broker_finding.forced_action

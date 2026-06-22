@@ -18,8 +18,13 @@ import time
 from aegis.decision import Action, Phase, Verdict
 from aegis.detectors.base import DetectorResult
 from aegis.detectors.encoding import decodings
+from aegis.detectors.normalize import nfkc_strip
 from aegis.events import AegisEvent
 from aegis.honeytokens.registry import HoneytokenRegistry
+
+# Minimum canary length to match by plain substring. Generated tokens are long (>=19 chars); this
+# floor stops a short/dictionary-word canary (e.g. "cat") from flagging benign text as a leak.
+_MIN_CANARY_LEN = 8
 
 
 class HoneytokenDetector:
@@ -62,7 +67,9 @@ class HoneytokenDetector:
     def _scan(self, event: AegisEvent, tokens: list[str]) -> dict | None:
         """Return evidence for the first canary found, or ``None``. Checks each tool-arg value and
         the flat inspectable text, both verbatim and via decoded forms."""
-        token_set = set(tokens)
+        token_set = {t for t in tokens if len(t) >= _MIN_CANARY_LEN}
+        if not token_set:
+            return None
 
         # Per-argument scan first, so we can attribute the hit to the specific tool argument.
         for arg_name, value in event.tool_arg_items():
@@ -74,9 +81,11 @@ class HoneytokenDetector:
         return self._match(event.inspectable_text(), token_set, where="output")
 
     def _match(self, text: str, token_set: set[str], *, where: str) -> dict | None:
-        """Look for any token in ``text`` verbatim, then in its decoded forms."""
+        """Look for any token in ``text`` verbatim, then in its decoded forms. ``text`` is
+        Unicode-normalized first so a canary spliced with zero-width/homoglyph chars still matches."""
         if not text:
             return None
+        text = nfkc_strip(text)
         for token in token_set:
             if token in text:
                 return self._evidence(token, where, "verbatim")
