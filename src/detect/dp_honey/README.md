@@ -89,8 +89,20 @@ python -m detect.dp_honey auto-decoy --file suspect.txt --seed 1
 ```
 
 The repository also includes `scripts/eval_dp_honey.py`, which produces the
-deterministic Table 2-style per-encoding precision/recall summary, conformal
-coverage, and Eq.5 catch-probability accounting used by the capstone eval.
+Table 2-style per-encoding precision/recall summary, conformal coverage, and
+Eq.5 catch-probability accounting used by the capstone eval. Scanner metrics
+stay deterministic and synthetic. Beta accounting defaults to a local surrogate,
+can be overridden with `--beta`, or can directly execute a Cameron/Spine-style
+red-team distinguisher:
+
+```bash
+python scripts/eval_dp_honey.py --cameron-spine-command <cameron-spine-red-team-command>
+```
+
+The red-team command receives JSON on stdin with the generated candidate token
+values and should emit JSON on stdout with per-token predictions such as
+`{"predictions": [{"token_id": "hny_eval_000", "distinguished": true}]}`.
+Those predictions become the measured beta used in Eq.5.
 
 `generate` is capped at 10000 (it streams one token at a time); `report` is
 capped at 5000 (metrics require materializing the whole batch). Oversized counts

@@ -183,6 +183,101 @@ def test_build_evaluation_report_can_use_external_beta_override():
     assert report["catch_probability"]["points"][1]["catch_probability"] == pytest.approx(0.75)
 
 
+def test_parse_cameron_spine_beta_report_uses_per_token_predictions():
+    tokens = (
+        _planted("sk_live_hny_canary_0000", token_id="a"),
+        _planted("sk_live_realisticValue123", token_id="b"),
+    )
+    payload = {
+        "schema_version": "cameron_spine_beta_v1",
+        "run_id": "unit-run",
+        "predictions": [
+            {"token_id": "a", "distinguished": True, "score": 0.97},
+            {"token_id": "b", "prediction": "real", "score": 0.11},
+        ],
+    }
+
+    report = eval_dp_honey.parse_cameron_spine_beta_report(payload, honeytokens=tokens, command_name="unit")
+
+    assert report.label == "cameron_spine_red_team_call"
+    assert report.beta == 0.5
+    assert report.distinguished_count == 1
+    assert report.summary["schema_version"] == "cameron_spine_beta_v1"
+    assert report.summary["run_id"] == "unit-run"
+    assert report.to_json()["command_name"] == "unit"
+
+
+def test_parse_cameron_spine_beta_report_rejects_missing_prediction():
+    tokens = (_planted(token_id="a"), _planted("sk_live_realisticValue123", token_id="b"))
+    payload = {"predictions": [{"token_id": "a", "distinguished": True}]}
+
+    with pytest.raises(ValueError, match="missing predictions"):
+        eval_dp_honey.parse_cameron_spine_beta_report(payload, honeytokens=tokens)
+
+
+def test_run_cameron_spine_red_team_calls_command_with_request_json():
+    tokens = (
+        _planted("sk_live_hny_canary_0000", token_id="a"),
+        _planted("sk_live_realisticValue123", token_id="b"),
+    )
+    code = (
+        "import json, sys; "
+        "request = json.load(sys.stdin); "
+        "predictions = ["
+        "{'token_id': item['token_id'], 'distinguished': item['value'].find('hny') >= 0} "
+        "for item in request['honeytokens']"
+        "]; "
+        "print(json.dumps({'schema_version': 'cameron_spine_beta_v1', 'predictions': predictions}))"
+    )
+
+    report = eval_dp_honey.run_cameron_spine_red_team([sys.executable, "-c", code], tokens)
+
+    assert report.beta == 0.5
+    assert report.token_count == 2
+    assert report.distinguished_count == 1
+
+
+def test_build_evaluation_report_can_call_cameron_spine_command():
+    code = (
+        "import json, sys; "
+        "request = json.load(sys.stdin); "
+        "predictions = [{'token_id': item['token_id'], 'distinguished': False} "
+        "for item in request['honeytokens']]; "
+        "print(json.dumps({'schema_version': 'cameron_spine_beta_v1', 'run_id': 'eval-unit', "
+        "'predictions': predictions}))"
+    )
+
+    report = eval_dp_honey.build_evaluation_report(
+        token_count=1,
+        sample_seed=3,
+        train_seed=5,
+        corpus_size=25,
+        calibration_count=20,
+        heldout_count=5,
+        max_k=1,
+        cameron_spine_command=[sys.executable, "-c", code],
+    )
+
+    assert report["catch_probability"]["beta"] == 0.0
+    assert report["catch_probability"]["beta_source"] == "cameron_spine_red_team_call"
+    assert report["catch_probability"]["cameron_spine_command_used"] is True
+    assert report["cameron_spine_beta"]["summary"]["run_id"] == "eval-unit"
+
+
+def test_build_evaluation_report_rejects_beta_override_with_cameron_spine_command():
+    with pytest.raises(ValueError, match="either beta_override or cameron_spine_command"):
+        eval_dp_honey.build_evaluation_report(
+            token_count=1,
+            sample_seed=3,
+            train_seed=5,
+            corpus_size=25,
+            calibration_count=20,
+            heldout_count=5,
+            beta_override=0.25,
+            cameron_spine_command=[sys.executable, "-c", "print('{}')"],
+        )
+
+
 def test_cli_main_emits_json(capsys):
     rc = eval_dp_honey.main(
         [

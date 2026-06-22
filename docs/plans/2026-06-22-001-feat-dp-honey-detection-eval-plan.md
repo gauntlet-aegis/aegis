@@ -10,7 +10,17 @@ origin: docs/brainstorms/2026-06-22-dp-honey-detection-eval-requirements.md
 
 ## Summary
 
-Add the missing DP-HONEY detection and evaluation layer on top of the Aegis runtime branch: baseline post-output text detection, planted-value cross-encoding scanning, conformal fuzzy calibration, DP-HONEY pre/post stage behavior, and a deterministic local eval script. The work preserves the existing registry-derived credential scanner and auto-decoy behavior while adding a separate planted-value leakage path for known honeytokens.
+Add the missing DP-HONEY detection and evaluation layer on top of the Aegis runtime branch: baseline post-output text detection, planted-value cross-encoding scanning, conformal fuzzy calibration, DP-HONEY pre/post stage behavior, and an eval script with deterministic local metrics plus optional Cameron/Spine red-team beta measurement. The work preserves the existing registry-derived credential scanner and auto-decoy behavior while adding a separate planted-value leakage path for known honeytokens.
+
+### 2026-06-22 Follow-Up Addendum
+
+After the review-ready branch passed the local quality gate, the user requested
+promotion into `DPHoneyTokenGenerator-integration` and a direct Cameron/Spine
+red-team measurement path. That supersedes R3 for this follow-up. The eval
+script now supports `--cameron-spine-command`, which executes a
+Cameron/Spine-compatible command, sends candidate token JSON on stdin, parses
+per-token distinguisher predictions from stdout, and uses the measured beta in
+Eq.5 accounting. The local surrogate remains the offline fallback.
 
 ---
 

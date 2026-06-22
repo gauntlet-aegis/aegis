@@ -32,9 +32,9 @@ The first runtime spine is implemented and CI-enforced:
   - `DPHoneyStage`, which plants DP-HONEY canaries before forwarding and blocks
     post-output exact planted-value leaks across direct, reversed, leet,
     ROT-N, base64/base32/hex, decoded-blob, and fragmented forms.
-- DP-HONEY conformal calibration for the fuzzy/partial channel plus local eval
-  accounting for per-encoding precision/recall, conformal coverage, and Eq.5
-  catch probability.
+- DP-HONEY conformal calibration for the fuzzy/partial channel plus eval
+  accounting for per-encoding precision/recall, conformal coverage, Eq.5 catch
+  probability, and optional Cameron/Spine red-team beta measurement.
 - A fixture-backed `cift_selector_probe_v0` candidate monitor replay path that
   consumes promoted calibrated CIFT scores without importing research code.
 - A runtime-native `aegis.detectors.cift_runtime.CiftRuntimeDetector` that loads
