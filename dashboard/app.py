@@ -17,7 +17,17 @@ import html
 import streamlit as st
 
 import dashboard.data as data
+from aegis.decision import Action
 from aegis.policy import Mode
+from aegis.policy.modes import apply_mode
+
+# How each mode reshapes the written rule actions (shown in V5 so an auditor isn't misled into
+# thinking observe mode blocks).
+MODE_EFFECT = {
+    Mode.OBSERVE: "every BLOCK / SANITIZE / ESCALATE is downgraded to WARN — records, never blocks",
+    Mode.BALANCED: "rules enforce exactly as written",
+    Mode.STRICT: "WARN is bumped to SANITIZE and SANITIZE to BLOCK — more conservative",
+}
 
 # ---------------------------------------------------------------------------------------------
 # Theme — dark "security console" palette (matches the approved Figma mocks). The Streamlit
@@ -105,7 +115,9 @@ def view_feed(mode: Mode) -> None:
     f = st.columns([1, 1, 2])
     pick_action = f[0].selectbox("Action", actions, key="feed_action")
     pick_phase = f[1].selectbox("Phase", phases, key="feed_phase")
-    query = f[2].text_input("Filter scenario / category", key="feed_query").strip().lower()
+    query = f[2].text_input("Filter scenario / category", key="feed_query",
+                            placeholder="e.g. tool_exfil — then press Enter",
+                            help="Type a scenario id or category, then press Enter to apply.").strip().lower()
 
     rows = [
         r for r in view.rows
@@ -137,7 +149,10 @@ def view_feed(mode: Mode) -> None:
                          f'{r.latency_ms:.2f} ms</div>', unsafe_allow_html=True)
         if cols[4].button("Detail", key=f"detail_{r.scenario_id}"):
             st.session_state["selected_scenario"] = r.scenario_id
-            st.session_state["nav"] = "V2 · Decision Detail"
+            # Stage the nav target in a NON-widget key; main() promotes it to the radio's `nav`
+            # key BEFORE the widget is instantiated (mutating a widget key after it exists raises
+            # StreamlitAPIException).
+            st.session_state["_goto"] = "V2 · Decision Detail"
             st.rerun()
         st.markdown(f'<hr style="border-color:{BORDER};margin:6px 0">', unsafe_allow_html=True)
 
@@ -155,6 +170,8 @@ def view_detail(mode: Mode) -> None:
                     unsafe_allow_html=True)
         return
     selected = st.selectbox("Scenario", ids, index=ids.index(selected), key="detail_select")
+    st.caption(f"Browse any of the {len(ids)} decisions with this dropdown, "
+               f"or click “Detail” on a row in the Live Decision Feed.")
     st.session_state["selected_scenario"] = selected
 
     det = data.decision_detail(selected, mode)
@@ -306,18 +323,28 @@ def view_policy(mode: Mode) -> None:
     """V5 — Policy & Detectors: read-only reference of rules, detectors, and registries."""
     st.subheader("Policy & Detectors")
     pv = data.load_policy_rules()
-    st.markdown(f'Active mode: {badge(mode.name)}'
+    st.markdown(f'Active mode: <span class="aegis-chip" style="color:{BLUE};border-color:{BLUE};'
+                f'font-weight:700">{html.escape(mode.value)}</span>'
                 f' &nbsp;<span class="aegis-muted">(policy file ships as '
                 f'<span class="aegis-mono">{html.escape(pv.mode)}</span>; the header selector '
                 f'overrides it live)</span>', unsafe_allow_html=True)
     st.write("")
 
+    st.markdown(f'<div class="aegis-banner">In <b>{mode.value}</b> mode, '
+                f'{MODE_EFFECT[mode]}. Rule cards show the written action and, when the mode '
+                f'changes it, the effective action.</div>', unsafe_allow_html=True)
     st.markdown("**Loaded rules** (independent; most-severe action wins)")
     for r in pv.rules:
+        written = Action[r["action"]]
+        effective = apply_mode(written, mode)
+        eff = badge(r["action"])
+        if effective != written:
+            eff += (f' <span class="aegis-muted">→ {mode.value}:</span> '
+                    f'{badge(effective.name)}')
         st.markdown(
             f'<div class="aegis-card"><span class="aegis-chip">{html.escape(r["type"])}</span> '
-            f'<span class="aegis-mono">{html.escape(r["summary"])}</span> &rarr; '
-            f'{badge(r["action"])}</div>', unsafe_allow_html=True)
+            f'<span class="aegis-mono">{html.escape(r["summary"])}</span> &rarr; {eff}</div>',
+            unsafe_allow_html=True)
 
     with st.expander("Raw policy YAML"):
         st.code(pv.raw_yaml, language="yaml")
@@ -383,6 +410,11 @@ def main() -> None:
     mode_key = header[1].selectbox("Policy mode", list(MODE_OPTIONS), index=1, key="mode")
     mode = MODE_OPTIONS[mode_key]
     st.markdown(f'<hr style="border-color:{BORDER};margin:8px 0 16px 0">', unsafe_allow_html=True)
+
+    # Promote a staged nav target (set by a "Detail" button) into the radio's widget key BEFORE the
+    # widget is created — mutating it after instantiation raises StreamlitAPIException.
+    if "_goto" in st.session_state:
+        st.session_state["nav"] = st.session_state.pop("_goto")
 
     with st.sidebar:
         st.markdown("### Views")

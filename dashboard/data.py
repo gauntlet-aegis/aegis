@@ -470,13 +470,24 @@ class RegistryView:
     broker_handles: list[dict]
 
 
+@lru_cache(maxsize=4)
+def _registry_cached(directory: str) -> RegistryView:
+    return _build_registry(directory)
+
+
 def honeytoken_and_broker_registry(directory: "str | Path" = SCENARIO_DIR) -> RegistryView:
     """Plant every scenario's declared canary into a registry and harvest the broker handles.
 
-    Drives a single Aegis so the canary planting path is the real one; collects canary provenance
-    (id/service/format/location, NOT the token) and the distinct ``secret://`` handles that appear
-    across the scenario tool-call arguments.
+    Cached per directory so canary ids stay stable across reloads (each plant mints a fresh random
+    id; recomputing every rerun would make the audit view's ids churn).
     """
+    return _registry_cached(str(directory))
+
+
+def _build_registry(directory: "str | Path") -> RegistryView:
+    """Drive a single Aegis so the canary planting path is the real one; collect canary provenance
+    (id/service/format/location, NOT the token) and the distinct ``secret://`` handles across the
+    scenario tool-call arguments."""
     aegis = Aegis.from_config(DEFAULT_POLICY)
     scenarios = get_scenarios(directory)
 

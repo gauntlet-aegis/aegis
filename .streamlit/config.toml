@@ -12,3 +12,7 @@ headless = true
 
 [browser]
 gatherUsageStats = false
+
+[client]
+# Hide the Streamlit "Deploy" button / hamburger chrome — this is a self-hosted read-only console.
+toolbarMode = "minimal"
