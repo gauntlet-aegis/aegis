@@ -23,8 +23,18 @@ from .bigram import (
     generate_honeytokens,
     train_model,
 )
+from .cameron_spine import (
+    CAMERON_SPINE_REQUEST_SCHEMA_VERSION,
+    CAMERON_SPINE_RESPONSE_SCHEMA_VERSION,
+    DEFAULT_CAMERON_SPINE_TIMEOUT_SECONDS,
+    RedTeamBetaReport,
+    build_cameron_spine_request,
+    parse_cameron_spine_beta_report,
+    run_cameron_spine_red_team,
+)
 from .conformal import ConformalThreshold, calibrate_fuzzy_threshold, is_fuzzy_outlier
 from .errors import (
+    CameronSpineAdapterError,
     CountLimitError,
     DPHoneyError,
     EmptyCorpusError,
@@ -46,10 +56,14 @@ from .scanner import PlantedHoneytoken, PlantedMatch, PlantedScanResult, planted
 __version__ = "0.1.0"
 
 __all__ = [
+    "CAMERON_SPINE_REQUEST_SCHEMA_VERSION",
+    "CAMERON_SPINE_RESPONSE_SCHEMA_VERSION",
+    "DEFAULT_CAMERON_SPINE_TIMEOUT_SECONDS",
     "REGISTRY_VERSION",
     "REPORT_MAX",
     "SCHEMA_VERSION",
     "BigramHoneytokenModel",
+    "CameronSpineAdapterError",
     "ConformalThreshold",
     "CountLimitError",
     "DPHoneyError",
@@ -66,9 +80,11 @@ __all__ = [
     "PlantedMatch",
     "PlantedScanConfigurationError",
     "PlantedScanResult",
+    "RedTeamBetaReport",
     "UnknownFormatError",
     "Variable",
     "__version__",
+    "build_cameron_spine_request",
     "build_model",
     "calibrate_fuzzy_threshold",
     "compute_report",
@@ -79,7 +95,9 @@ __all__ = [
     "list_formats",
     "load_model",
     "model_to_dict",
+    "parse_cameron_spine_beta_report",
     "planted_fuzzy_similarity",
+    "run_cameron_spine_red_team",
     "save_model",
     "scan_planted_values",
     "train_model",

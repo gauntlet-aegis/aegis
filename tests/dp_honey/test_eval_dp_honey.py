@@ -12,6 +12,7 @@ from types import ModuleType
 import pytest
 
 from detect.dp_honey.conformal import ConformalThreshold
+from detect.dp_honey.errors import CameronSpineAdapterError
 from detect.dp_honey.scanner import PlantedHoneytoken
 
 
@@ -211,7 +212,7 @@ def test_parse_cameron_spine_beta_report_rejects_missing_prediction():
     tokens = (_planted(token_id="a"), _planted("sk_live_realisticValue123", token_id="b"))
     payload = {"predictions": [{"token_id": "a", "distinguished": True}]}
 
-    with pytest.raises(ValueError, match="missing predictions"):
+    with pytest.raises(CameronSpineAdapterError, match="missing predictions"):
         eval_dp_honey.parse_cameron_spine_beta_report(payload, honeytokens=tokens)
 
 

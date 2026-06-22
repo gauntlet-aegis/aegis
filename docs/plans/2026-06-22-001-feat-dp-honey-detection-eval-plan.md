@@ -20,7 +20,10 @@ red-team measurement path. That supersedes R3 for this follow-up. The eval
 script now supports `--cameron-spine-command`, which executes a
 Cameron/Spine-compatible command, sends candidate token JSON on stdin, parses
 per-token distinguisher predictions from stdout, and uses the measured beta in
-Eq.5 accounting. The local surrogate remains the offline fallback.
+Eq.5 accounting. A follow-up cleanup promoted that command/request/response
+contract into `detect.dp_honey.cameron_spine`, leaving `scripts/eval_dp_honey.py`
+as the metrics/accounting orchestrator and the package module as the reusable
+adapter seam. The local surrogate remains the offline fallback.
 
 ---
 

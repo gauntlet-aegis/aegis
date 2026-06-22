@@ -52,3 +52,7 @@ class ModelArtifactExistsError(DPHoneyError):
 
 class PlantedScanConfigurationError(DPHoneyError):
     """A planted-value scanner input or threshold is invalid."""
+
+
+class CameronSpineAdapterError(DPHoneyError):
+    """A Cameron/Spine red-team adapter command or response is invalid."""
