@@ -23,7 +23,18 @@ from .bigram import (
     generate_honeytokens,
     train_model,
 )
+from .cameron_spine import (
+    CAMERON_SPINE_REQUEST_SCHEMA_VERSION,
+    CAMERON_SPINE_RESPONSE_SCHEMA_VERSION,
+    DEFAULT_CAMERON_SPINE_TIMEOUT_SECONDS,
+    RedTeamBetaReport,
+    build_cameron_spine_request,
+    parse_cameron_spine_beta_report,
+    run_cameron_spine_red_team,
+)
+from .conformal import ConformalThreshold, calibrate_fuzzy_threshold, is_fuzzy_outlier
 from .errors import (
+    CameronSpineAdapterError,
     CountLimitError,
     DPHoneyError,
     EmptyCorpusError,
@@ -33,20 +44,27 @@ from .errors import (
     ModelArtifactDecodeError,
     ModelArtifactExistsError,
     ModelSchemaError,
+    PlantedScanConfigurationError,
     UnknownFormatError,
 )
 from .formats import REGISTRY_VERSION, get_format, list_format_slugs, list_formats
 from .grammar import FormatSpec, Literal, Variable
 from .model_io import SCHEMA_VERSION, load_model, model_to_dict, save_model
 from .realism import REPORT_MAX, compute_report
+from .scanner import PlantedHoneytoken, PlantedMatch, PlantedScanResult, planted_fuzzy_similarity, scan_planted_values
 
 __version__ = "0.1.0"
 
 __all__ = [
+    "CAMERON_SPINE_REQUEST_SCHEMA_VERSION",
+    "CAMERON_SPINE_RESPONSE_SCHEMA_VERSION",
+    "DEFAULT_CAMERON_SPINE_TIMEOUT_SECONDS",
     "REGISTRY_VERSION",
     "REPORT_MAX",
     "SCHEMA_VERSION",
     "BigramHoneytokenModel",
+    "CameronSpineAdapterError",
+    "ConformalThreshold",
     "CountLimitError",
     "DPHoneyError",
     "EmptyCorpusError",
@@ -58,17 +76,29 @@ __all__ = [
     "ModelArtifactDecodeError",
     "ModelArtifactExistsError",
     "ModelSchemaError",
+    "PlantedHoneytoken",
+    "PlantedMatch",
+    "PlantedScanConfigurationError",
+    "PlantedScanResult",
+    "RedTeamBetaReport",
     "UnknownFormatError",
     "Variable",
     "__version__",
+    "build_cameron_spine_request",
     "build_model",
+    "calibrate_fuzzy_threshold",
     "compute_report",
     "generate_honeytokens",
     "get_format",
+    "is_fuzzy_outlier",
     "list_format_slugs",
     "list_formats",
     "load_model",
     "model_to_dict",
+    "parse_cameron_spine_beta_report",
+    "planted_fuzzy_similarity",
+    "run_cameron_spine_red_team",
     "save_model",
+    "scan_planted_values",
     "train_model",
 ]

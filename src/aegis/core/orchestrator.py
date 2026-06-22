@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Protocol
+from typing import Protocol, cast
 
 from aegis.core.contracts import (
     AuditEvent,
@@ -71,6 +72,9 @@ class TurnAnnotator(Protocol):
         """Attach derived runtime metadata before detector stages run."""
 
 
+_ModelForwardMessagesFor = Callable[[NormalizedTurn], tuple[Message, ...] | None]
+
+
 class AegisRuntime:
     def __init__(
         self,
@@ -107,7 +111,7 @@ class AegisRuntime:
             turn = annotator.annotate(turn)
 
         pre_generation_results = tuple(detector.evaluate(turn, None) for detector in self._pre_generation_detectors)
-        model_response = self._model_provider.generate(turn)
+        model_response = self._model_provider.generate(_model_forward_turn(turn, self._turn_annotators))
         post_generation_results = tuple(
             detector.evaluate(turn, model_response) for detector in self._post_generation_detectors
         )
@@ -137,3 +141,34 @@ class AegisRuntime:
             policy_decision=policy_decision,
             audit_event=audit_event,
         )
+
+
+def _model_forward_turn(turn: NormalizedTurn, annotators: tuple[TurnAnnotator, ...]) -> NormalizedTurn:
+    model_messages = _model_forward_messages_from_annotators(turn=turn, annotators=annotators)
+    if model_messages is None:
+        return turn
+    return NormalizedTurn(
+        trace_id=turn.trace_id,
+        session_id=turn.session_id,
+        turn_index=turn.turn_index,
+        capability_mode=turn.capability_mode,
+        model=turn.model,
+        messages=model_messages,
+        tool_calls=turn.tool_calls,
+        sensitive_spans=turn.sensitive_spans,
+        metadata=turn.metadata,
+    )
+
+
+def _model_forward_messages_from_annotators(
+    turn: NormalizedTurn,
+    annotators: tuple[TurnAnnotator, ...],
+) -> tuple[Message, ...] | None:
+    for annotator in annotators:
+        method = getattr(annotator, "model_forward_messages_for", None)
+        if method is None:
+            continue
+        messages = cast(_ModelForwardMessagesFor, method)(turn)
+        if messages is not None:
+            return messages
+    return None
