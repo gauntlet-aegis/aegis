@@ -256,7 +256,9 @@ def baseline_vs_protected(protected_mode: "Mode | str" = Mode.BALANCED,
     protected = {r.scenario_id: r for r in protected_view.rows}
 
     rows: list[ComparisonRow] = []
-    for sid in sorted(idx):
+    # Attack scenarios first (the headline: baseline leaks, Aegis stops it), then benign.
+    order = sorted(idx, key=lambda s: (idx[s].category in BENIGN_CATEGORIES, s))
+    for sid in order:
         b = baseline.get(sid)
         p = protected.get(sid)
         if b is None or p is None:
@@ -337,17 +339,33 @@ def _drive_scenario(aegis: Aegis, scenario: Scenario, *, session_id: str) -> Aeg
     return decision  # type: ignore[return-value]
 
 
+def _round_floats(obj, ndigits: int = 4):
+    """Round floats in an evidence structure for display (binary-float noise like 0.4499…)."""
+    if isinstance(obj, float):
+        return round(obj, ndigits)
+    if isinstance(obj, dict):
+        return {k: _round_floats(v, ndigits) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_round_floats(v, ndigits) for v in obj]
+    return obj
+
+
 def decision_detail(scenario_id: str, mode: "Mode | str" = Mode.BALANCED,
                     directory: "str | Path" = SCENARIO_DIR) -> "DecisionDetail | None":
     """Re-run a single scenario through a fresh Aegis under ``mode`` and capture full evidence.
 
-    Returns ``None`` for an unknown scenario id. Builds a fresh SDK + policy each call (cheap,
-    deterministic) so the per-detector evidence is exactly what the runtime would produce.
+    Cached per (scenario, mode) so the trace_id and evidence are stable across reloads.
     """
+    mode_value = mode.value if isinstance(mode, Mode) else Mode(mode).value
+    return _decision_detail_cached(scenario_id, mode_value, str(directory))
+
+
+@lru_cache(maxsize=256)
+def _decision_detail_cached(scenario_id: str, mode_value: str, directory: str) -> "DecisionDetail | None":
     scenario = _scenario_index(get_scenarios(directory)).get(scenario_id)
     if scenario is None:
         return None
-    mode_enum = mode if isinstance(mode, Mode) else Mode(mode)
+    mode_enum = Mode(mode_value)
 
     policy = load_policy(DEFAULT_POLICY)
     policy.mode = mode_enum
@@ -361,7 +379,7 @@ def decision_detail(scenario_id: str, mode: "Mode | str" = Mode.BALANCED,
         verdict=h.verdict.value,
         recommended_action=h.recommended_action.name,
         latency_ms=h.latency_ms,
-        evidence=dict(h.evidence),
+        evidence=_round_floats(dict(h.evidence)),
     ) for h in decision.detector_hits]
 
     action = decision.action

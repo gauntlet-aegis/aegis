@@ -26,7 +26,8 @@ from aegis.policy.modes import apply_mode
 MODE_EFFECT = {
     Mode.OBSERVE: "every BLOCK / SANITIZE / ESCALATE is downgraded to WARN — records, never blocks",
     Mode.BALANCED: "rules enforce exactly as written",
-    Mode.STRICT: "WARN is bumped to SANITIZE and SANITIZE to BLOCK — more conservative",
+    Mode.STRICT: "WARN is bumped to SANITIZE and SANITIZE to BLOCK — more conservative "
+                 "(BLOCK and ESCALATE are already maximal and unchanged)",
 }
 
 # ---------------------------------------------------------------------------------------------
@@ -78,10 +79,11 @@ def chips(items: list[str]) -> str:
         '<span class="aegis-muted">—</span>'
 
 
-def risk_bar(score: float, color: str = BLUE) -> str:
+def risk_bar(score: float, color: str = BLUE, label: str | None = None) -> str:
     """A thin 0..1 risk bar as inline HTML (used in the feed and comparison rows)."""
     pct = max(0.0, min(1.0, score)) * 100
-    return (f'<div class="aegis-bar-track"><div class="aegis-bar-fill" '
+    aria = f' role="img" aria-label="{label}"' if label else ""
+    return (f'<div class="aegis-bar-track"{aria}><div class="aegis-bar-fill" '
             f'style="width:{pct:.0f}%;background:{color}"></div></div>')
 
 
@@ -94,7 +96,21 @@ def metric_card(value: str, label: str) -> str:
 # ---------------------------------------------------------------------------------------------
 def view_feed(mode: Mode) -> None:
     """V1 — Live Decision Feed: reverse-chronological stream of guarded turns."""
-    st.subheader("Live Decision Feed")
+    st.subheader("Live Decision Feed", anchor=False)
+    with st.expander("What am I looking at? — legend & plain-language guide"):
+        st.markdown(
+            "This is a **view-only** console: it shows decisions Aegis already made on an AI "
+            "agent's traffic. There is nothing to submit or scan here.\n\n"
+            "- A **turn** = one guarded request, tool call, or model response.\n"
+            "- **Action badges** — what Aegis did. A red **BLOCK** means it *stopped a leak* "
+            "(that's the system working, not an error):\n"
+            "    - 🟩 **ALLOW** — clean, let through · 🟨 **WARN** — flagged but let through · "
+            "🟧 **SANITIZE** — secret redacted · 🟥 **BLOCK** — refused · "
+            "🟪 **ESCALATE** — refused **and** sent for human review (a planted tripwire was hit).\n"
+            "- **Detector chips** — which checks looked at the turn: `secret_pattern` (credential "
+            "shapes), `encoding` (decodes hidden secrets), `tool_call_args` (secrets in tool "
+            "arguments), `honeytoken` (planted canary tripwires), `nimbus_lite` (slow multi-turn "
+            "leakage). *exfil* = exfiltration (data leaving); *conf* = confidence.")
     view = data.run_view(mode)
 
     if not view.rows:
@@ -142,16 +158,18 @@ def view_feed(mode: Mode) -> None:
             f'<div class="aegis-muted" style="font-size:0.72rem">{html.escape(r.input_summary)}</div>',
             unsafe_allow_html=True)
         cols[2].markdown(chips(r.detectors), unsafe_allow_html=True)
-        cols[3].markdown(f'{risk_bar(r.risk_score)}<div class="aegis-muted" '
-                         f'style="font-size:0.7rem">risk {r.risk_score:.2f}</div>',
-                         unsafe_allow_html=True)
+        cols[3].markdown(f'{risk_bar(r.risk_score, label=f"risk {r.risk_score:.2f}")}'
+                         f'<div class="aegis-muted" style="font-size:0.7rem">risk '
+                         f'{r.risk_score:.2f}</div>', unsafe_allow_html=True)
         cols[4].markdown(f'<div class="aegis-muted" style="font-size:0.74rem">'
                          f'{r.latency_ms:.2f} ms</div>', unsafe_allow_html=True)
-        if cols[4].button("Detail", key=f"detail_{r.scenario_id}"):
+        if cols[4].button("Detail", key=f"detail_{r.scenario_id}",
+                          help=f"Open the full decision for {r.scenario_id}"):
             st.session_state["selected_scenario"] = r.scenario_id
-            # Stage the nav target in a NON-widget key; main() promotes it to the radio's `nav`
-            # key BEFORE the widget is instantiated (mutating a widget key after it exists raises
-            # StreamlitAPIException).
+            # Also set the V2 selectbox's OWN widget key, else its persisted value overrides the
+            # index= and the detail view opens the wrong scenario. Both are set before V2's widgets
+            # instantiate. The nav target is staged in a non-widget key (_goto) and promoted in main().
+            st.session_state["detail_select"] = r.scenario_id
             st.session_state["_goto"] = "V2 · Decision Detail"
             st.rerun()
         st.markdown(f'<hr style="border-color:{BORDER};margin:6px 0">', unsafe_allow_html=True)
@@ -159,7 +177,7 @@ def view_feed(mode: Mode) -> None:
 
 def view_detail(mode: Mode) -> None:
     """V2 — Decision Detail: full per-detector evidence for one guarded turn."""
-    st.subheader("Decision Detail")
+    st.subheader("Decision Detail", anchor=False)
     scenarios = data.get_scenarios()
     ids = [s.id for s in scenarios]
     selected = st.session_state.get("selected_scenario", ids[0] if ids else None)
@@ -192,18 +210,22 @@ def view_detail(mode: Mode) -> None:
         f'</div>', unsafe_allow_html=True)
 
     st.markdown("**Per-detector evidence**")
+    st.caption("Columns: detector · score (0–1) · confidence · verdict · recommended action · "
+               "latency. Each detector that flagged something opens its evidence below.")
     for h in det.detector_hits:
-        cols = st.columns([1.4, 1, 1, 1.2, 1.2, 0.9])
+        cols = st.columns([1.4, 1, 1.1, 1.2, 1.2, 0.9])
         cols[0].markdown(f'<span class="aegis-mono">{html.escape(h.detector_name)}</span>',
                          unsafe_allow_html=True)
         cols[1].markdown(f'score {h.score:.2f}')
-        cols[2].markdown(f'conf {h.confidence:.2f}')
+        cols[2].markdown(f'conf. {h.confidence:.2f}')
         cols[3].markdown(f'<span class="aegis-muted">{h.verdict}</span>', unsafe_allow_html=True)
         cols[4].markdown(badge(h.recommended_action), unsafe_allow_html=True)
         cols[5].markdown(f'<span class="aegis-muted" style="font-size:0.74rem">{h.latency_ms:.2f} '
                          f'ms</span>', unsafe_allow_html=True)
         if h.evidence:
-            with st.expander(f"evidence · {h.detector_name}"):
+            # Open the evidence for detectors that actually flagged (esp. the ground-truth
+            # honeytoken canary id), so a reviewer doesn't miss the key proof behind a collapsed row.
+            with st.expander(f"evidence · {h.detector_name}", expanded=h.verdict == "malicious"):
                 st.json(h.evidence)
 
     st.markdown("**Policy reasons**")
@@ -240,10 +262,11 @@ def view_detail(mode: Mode) -> None:
 
 def view_comparison(mode: Mode) -> None:
     """V3 — Baseline vs Protected: the demo headline, observe vs protected per scenario."""
-    st.subheader("Baseline vs Protected")
+    st.subheader("Baseline vs Protected", anchor=False)
     st.markdown('<div class="aegis-banner">Same scenarios run by the vulnerable agent '
                 '(<b>observe</b> — records, never blocks) next to the protected agent. '
-                'Highlighted rows are where Aegis stops what the baseline leaked.</div>',
+                'Rows tinted blue and tagged <b>🛡 Aegis stopped this</b> are where the protected '
+                'agent stops what the baseline leaked. Attack scenarios are listed first.</div>',
                 unsafe_allow_html=True)
     st.write("")
     rows = data.baseline_vs_protected(mode)
@@ -253,13 +276,24 @@ def view_comparison(mode: Mode) -> None:
         col.markdown(f'<span class="aegis-muted" style="font-size:0.72rem">{name}</span>',
                      unsafe_allow_html=True)
 
+    seen_benign = False
     for r in rows:
+        if not r.is_attack and not seen_benign:
+            seen_benign = True  # divider where the attack rows end and benign traffic begins
+            st.markdown('<div class="aegis-muted" style="font-size:0.72rem;margin:6px 0 2px 0;'
+                        'letter-spacing:0.04em">— BENIGN TRAFFIC (correctly allowed) —</div>',
+                        unsafe_allow_html=True)
         cols = st.columns([2.6, 1.3, 1.3, 3.0])
-        accent = f'border-left:3px solid {BLUE};padding-left:8px' if r.protected_stops_more else ''
+        if r.protected_stops_more:
+            accent = (f'background:rgba(88,166,255,0.12);border-left:4px solid {BLUE};'
+                      f'padding:6px 8px;border-radius:6px')
+            tag = '<br><span style="font-size:0.68rem;color:#58A6FF">🛡 Aegis stopped this</span>'
+        else:
+            accent, tag = 'padding:6px 8px', ''
         cols[0].markdown(
             f'<div style="{accent}"><span class="aegis-mono">{html.escape(r.scenario_id)}</span>'
             f'<br><span class="aegis-muted" style="font-size:0.72rem">{html.escape(r.category)}'
-            f'</span></div>', unsafe_allow_html=True)
+            f'</span>{tag}</div>', unsafe_allow_html=True)
         cols[1].markdown(badge(r.baseline_action), unsafe_allow_html=True)
         cols[2].markdown(badge(r.protected_action), unsafe_allow_html=True)
         reason = r.protected_reasons[0] if r.protected_reasons else \
@@ -271,7 +305,7 @@ def view_comparison(mode: Mode) -> None:
 
 def view_metrics(mode: Mode) -> None:
     """V4 — Metrics & Eval Summary: the scored eval-harness output for the active posture."""
-    st.subheader("Metrics & Eval Summary")
+    st.subheader("Metrics & Eval Summary", anchor=False)
     st.markdown('<div class="aegis-banner"><b>Demo-grade.</b> These numbers describe this small, '
                 'hand-authored deterministic suite — not a statistical bound on real-world '
                 'performance. The leakage budget is a learned cumulative signal, not a formal '
@@ -290,7 +324,9 @@ def view_metrics(mode: Mode) -> None:
                   unsafe_allow_html=True)
     st.write("")
 
-    st.markdown("**Detection rate by category**")
+    st.markdown("**Outcome rate by category**")
+    st.caption("🟩 green = benign category, correctly **allowed** (100% = no false blocks)  ·  "
+               "🟦 blue = attack category, correctly **detected** (100% = nothing missed).")
     for cat, rate in m.detection_rate_by_category.items():
         is_benign = cat in {"benign_normal", "benign_secret_handle", "false_positive_benign_text"}
         color = data.ACTION_META["ALLOW"]["bg"] if is_benign else BLUE
@@ -321,7 +357,7 @@ def view_metrics(mode: Mode) -> None:
 
 def view_policy(mode: Mode) -> None:
     """V5 — Policy & Detectors: read-only reference of rules, detectors, and registries."""
-    st.subheader("Policy & Detectors")
+    st.subheader("Policy & Detectors", anchor=False)
     pv = data.load_policy_rules()
     st.markdown(f'Active mode: <span class="aegis-chip" style="color:{BLUE};border-color:{BLUE};'
                 f'font-weight:700">{html.escape(mode.value)}</span>'
@@ -405,9 +441,12 @@ def main() -> None:
     header = st.columns([3, 1])
     header[0].markdown(
         '<h2 style="margin-bottom:0">🛡 Aegis</h2>'
-        '<span class="aegis-muted">Runtime credential-defense — read-only decision console</span>',
+        '<span class="aegis-muted">Runtime credential-defense — a <b>view-only</b> console showing '
+        'security decisions already made on agent traffic (nothing to submit or run here).</span>',
         unsafe_allow_html=True)
-    mode_key = header[1].selectbox("Policy mode", list(MODE_OPTIONS), index=1, key="mode")
+    mode_key = header[1].selectbox("Policy mode", list(MODE_OPTIONS), index=1, key="mode",
+                                   help="Switches the enforcement posture and re-runs the view. "
+                                        "Non-destructive — this is a read-only console.")
     mode = MODE_OPTIONS[mode_key]
     st.markdown(f'<hr style="border-color:{BORDER};margin:8px 0 16px 0">', unsafe_allow_html=True)
 
