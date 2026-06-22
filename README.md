@@ -105,6 +105,7 @@ Build normalized records from completed collection inputs:
 ```bash
 uv run aegis-trace-seed-inputs \
   --assignments data/trace_collection/assignments.jsonl \
+  --variants-per-label 20 \
   --output data/trace_collection/collection_inputs.generated.jsonl
 
 uv run aegis-trace-build-records \
