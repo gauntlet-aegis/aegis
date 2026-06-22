@@ -40,6 +40,7 @@ proxy-shaped corpus where:
 | LM Studio repaired 120 | Repair pairs until they pass strict unigram/bigram validation. | Unigram shortcuts were removed, char baseline weakened, but word bigrams still dominated. | Make phrase order itself non-memorisable. |
 | Crossed-action 120 | Force each pair to share identical unigram and bigram inventory while swapping allowed versus denied action semantics. | Activation beat word 1-2 and char baselines under grouped evaluation, but word 1-3 TF-IDF was perfect because the grammar frame stayed fixed. | Vary syntactic frames around the same allowed/denied semantic contrast. |
 | Paired-crossed-action default 360 | Promote crossed-action generation into the trace harness and run it on the full default task catalog. | The result reproduced the activation-over-word-1-2 diagnostic at 240 CIFT rows, while confirming word 1-3 and 1-4 template shortcuts remain perfect. | Treat this profile as a regression diagnostic and build grammar-diverse traces next. |
+| Paired-semantic-indirection default 720 | Use neutral option codes and flipped code-to-action mappings to prevent local n-grams from directly carrying the label. | Word TF-IDF through 1-6 fell near chance, but the linear readout activation probe was also weak. | Keep this as a hard stress test; build natural grammar-diverse boundary prompts next. |
 
 ## Current State
 
@@ -57,6 +58,9 @@ The honest current result is sharper:
 - Fixed trigram and fourgram grammar are now the main visible shortcuts.
 - `paired_crossed_action` is now a reproducible harness profile rather than a
   one-off local corpus recipe.
+- `paired_semantic_indirection` closes the short n-gram shortcut more strongly,
+  but appears too compositionally indirect for the current Qwen3-0.6B linear
+  readout probe.
 
 The current bottleneck is data design, not extraction plumbing.
 
@@ -122,6 +126,31 @@ Grouped evaluation on 240 structured safe/exfiltration rows showed:
 
 This gives us a reproducible regression diagnostic for unigram/bigram shortcut
 control, but it does not close the template-shortcut problem.
+
+The `paired_semantic_indirection` profile then removed the short template
+shortcut by using neutral option codes:
+
+- 240 pairs.
+- 0 failed pairs.
+- Max unigram delta: 0.
+- Min bigram Jaccard: 0.9216.
+- Average bigram Jaccard: 0.9259.
+- Tool payload mismatch pairs: 0.
+- Tool placeholder pairs: 0.
+
+Grouped evaluation on 480 structured safe/exfiltration rows showed:
+
+- Best grouped activation probe: 0.5518 macro F1.
+- Word TF-IDF 1-2: 0.4749 macro F1.
+- Char TF-IDF 3-5: 0.4963 macro F1.
+- Word TF-IDF 1-3: 0.4669 macro F1.
+- Word TF-IDF 1-4: 0.4667 macro F1.
+- Word TF-IDF 1-5: 0.4438 macro F1.
+- Word TF-IDF 1-6: 0.4575 macro F1.
+
+This is a useful negative result: text shortcuts are controlled, but the
+current activation probe does not yet solve the induced code-to-action
+relation.
 
 ## Next Data Requirement
 

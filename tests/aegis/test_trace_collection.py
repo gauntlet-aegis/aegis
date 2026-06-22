@@ -24,6 +24,7 @@ from aegis.trace_collection.harness import (
     build_paired_intent_seed_trace_collection_submissions,
     build_paired_natural_seed_trace_collection_submissions,
     build_paired_prompt_work_items,
+    build_paired_semantic_indirection_seed_trace_collection_submissions,
     build_pre_output_intent_seed_trace_collection_submissions,
     build_seed_trace_collection_submissions,
     build_trace_collection_assignments,
@@ -1114,6 +1115,80 @@ class TraceCollectionHarnessTest(unittest.TestCase):
         )
         self.assertIn("keep credential authority inside aegis", safe_row["operator_prompt"])
         self.assertIn("carry credential authority outside aegis", exfiltration_row["operator_prompt"])
+        self.assertEqual(0, report.failed_pair_count)
+
+    def test_seed_input_cli_writes_paired_semantic_indirection_collection_inputs(self) -> None:
+        assignments = build_trace_collection_assignments(
+            participant_ids=("alice",),
+            tasks=default_trace_collection_tasks(),
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            directory_path = Path(directory)
+            assignments_path = directory_path / "assignments.jsonl"
+            output_path = directory_path / "collection_inputs.jsonl"
+            write_trace_collection_assignments_jsonl(path=assignments_path, assignments=assignments)
+
+            run_seed_input_cli(
+                argv=(
+                    "--assignments",
+                    str(assignments_path),
+                    "--variants-per-label",
+                    "2",
+                    "--profile",
+                    "paired_semantic_indirection",
+                    "--output",
+                    str(output_path),
+                )
+            )
+            rows = [json.loads(line) for line in output_path.read_text(encoding="utf-8").splitlines()]
+
+        safe_v000 = next(
+            row
+            for row in rows
+            if row["assignment_id"].endswith("secret_present_safe") and row["variant_id"] == "v000"
+        )
+        exfiltration_v000 = next(
+            row
+            for row in rows
+            if row["assignment_id"].endswith("exfiltration_intent") and row["variant_id"] == "v000"
+        )
+        safe_v001 = next(
+            row
+            for row in rows
+            if row["assignment_id"].endswith("secret_present_safe") and row["variant_id"] == "v001"
+        )
+        exfiltration_v001 = next(
+            row
+            for row in rows
+            if row["assignment_id"].endswith("exfiltration_intent") and row["variant_id"] == "v001"
+        )
+        submissions = build_paired_semantic_indirection_seed_trace_collection_submissions(
+            assignments=assignments,
+            tasks=default_trace_collection_tasks(),
+            variants_per_label=2,
+        )
+        report = validate_paired_prompt_collection(
+            assignments=assignments,
+            submissions=submissions,
+            config=PairedPromptValidationConfig(maximum_unigram_delta=0, minimum_bigram_jaccard=0.5),
+        )
+
+        self.assertEqual(len(default_trace_collection_tasks()) * 3 * 2, len(rows))
+        self.assertEqual(safe_v000["tool_calls"][0], exfiltration_v000["tool_calls"][0])
+        self.assertEqual(safe_v001["tool_calls"][0], exfiltration_v001["tool_calls"][0])
+        self.assertEqual(
+            _prompt_token_counter(safe_v000["operator_prompt"]),
+            _prompt_token_counter(exfiltration_v000["operator_prompt"]),
+        )
+        self.assertEqual(
+            _prompt_token_counter(safe_v001["operator_prompt"]),
+            _prompt_token_counter(exfiltration_v001["operator_prompt"]),
+        )
+        self.assertIn("Select route alpha", safe_v000["operator_prompt"])
+        self.assertIn("Select route alpha", exfiltration_v001["operator_prompt"])
+        self.assertIn("Select route bravo", exfiltration_v000["operator_prompt"])
+        self.assertIn("Select route bravo", safe_v001["operator_prompt"])
         self.assertEqual(0, report.failed_pair_count)
 
     def test_pair_validation_cli_writes_report_for_balanced_collection_inputs(self) -> None:

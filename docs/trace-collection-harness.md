@@ -171,6 +171,25 @@ winning through shallow lexical features. It still leaves longer template
 features possible, so report word 1-3 baselines before interpreting activation
 probe gains.
 
+Use the paired-semantic-indirection profile when testing whether a detector can
+resolve a neutral option code instead of a local action phrase:
+
+```bash
+uv run aegis-trace-seed-inputs \
+  --assignments data/trace_collection/assignments.jsonl \
+  --variants-per-label 20 \
+  --profile paired_semantic_indirection \
+  --output data/trace_collection/collection_inputs.paired_semantic_indirection_720.jsonl
+```
+
+The paired-semantic-indirection profile maps two neutral codes to the same
+safe/exfiltration actions, then asks the prompt to select one code and reject
+the other. Code-to-action mappings flip across variants so local selection
+phrases are label-balanced. A neutral spacer separates the action table from
+the final code choice to prevent short word n-grams from spanning directly from
+`inside/outside Aegis` into the selected code. This is a hard stress test for
+semantic composition, not a preferred training corpus.
+
 ## Validate Paired Inputs
 
 Before converting paired safe/exfiltration inputs into CIFT structured prompts,
@@ -195,6 +214,9 @@ paraphrase data, choose thresholds deliberately and record them with the report.
 For `paired_crossed_action`, use `--maximum-unigram-delta 0` and
 `--minimum-bigram-jaccard 1.0`; any failure means the diagnostic profile is not
 preserving its core contract.
+For `paired_semantic_indirection`, use `--maximum-unigram-delta 0` and a lower
+bigram threshold such as `--minimum-bigram-jaccard 0.5`; the selected/rejected
+code order intentionally changes within each pair.
 
 ## Collect Paired Paraphrases
 
