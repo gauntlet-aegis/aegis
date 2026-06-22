@@ -1,0 +1,39 @@
+# Aegis default policy (PDF sections 6.3/6.4).
+#
+# Balanced posture: actions enforce exactly as written. Rules are independent — the engine ORs
+# them and the most-severe resulting action wins. Edit `mode` to `observe` (never enforces,
+# clamps to WARN) or `strict` (bumps WARN->SANITIZE, SANITIZE->BLOCK) without touching rules.
+mode: balanced
+
+rules:
+  # Any detector firing high is a hard block; a moderate score is a warning floor.
+  - type: detector_score_threshold
+    detector: "*"
+    threshold: 0.85
+    action: 3        # BLOCK
+  - type: detector_score_threshold
+    detector: "*"
+    threshold: 0.6
+    action: 1        # WARN
+
+  # A planted canary reappearing downstream is ground-truth exfiltration — escalate for review.
+  - type: canary_hit
+    action: 4        # ESCALATE
+
+  # Cumulative multi-turn leakage budget (NIMBUS): the closer to spent, the harder the response.
+  - type: leakage_budget_threshold
+    ratio: 1.0
+    action: 3        # BLOCK
+  - type: leakage_budget_threshold
+    ratio: 0.9
+    action: 2        # SANITIZE
+  - type: leakage_budget_threshold
+    ratio: 0.6
+    action: 1        # WARN
+
+  # A secret riding in any tool-call argument must never be forwarded.
+  - type: tool_arg_condition
+    tool: "*"
+    arg: "*"
+    contains_secret: true
+    action: 3        # BLOCK
