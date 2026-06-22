@@ -26,6 +26,15 @@ The first runtime spine is implemented and CI-enforced:
     honeytoken leaks.
   - `EncodedCanaryDetector` for base64, hex, ROT13, leet, reverse,
     fragmentation, and partial-overlap canary leakage.
+- Stage adapters:
+  - `TextDetectorStage`, the cheap always-on post-output canary baseline that
+    intentionally goes dark on encoded attacks.
+  - `DPHoneyStage`, which plants DP-HONEY canaries before forwarding and blocks
+    post-output exact planted-value leaks across direct, reversed, leet,
+    ROT-N, base64/base32/hex, decoded-blob, and fragmented forms.
+- DP-HONEY conformal calibration for the fuzzy/partial channel plus local eval
+  accounting for per-encoding precision/recall, conformal coverage, and Eq.5
+  catch probability.
 - A fixture-backed `cift_selector_probe_v0` candidate monitor replay path that
   consumes promoted calibrated CIFT scores without importing research code.
 - A runtime-native `aegis.detectors.cift_runtime.CiftRuntimeDetector` that loads
@@ -142,6 +151,7 @@ src/aegis/core/        Runtime contracts and orchestrator
 src/aegis/canaries/    Honeytoken registration and injection helpers
 src/aegis/demo/        Built-in runtime demo scenarios
 src/aegis/detectors/   Detector stage implementations
+src/aegis/stages/      Runtime stage wrappers for detector/injection flows
 src/aegis/policy/      Policy decision logic
 src/aegis/audit/       Audit sinks
 src/aegis/providers/   Model provider adapters

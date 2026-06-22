@@ -23,6 +23,7 @@ from .bigram import (
     generate_honeytokens,
     train_model,
 )
+from .conformal import ConformalThreshold, calibrate_fuzzy_threshold, is_fuzzy_outlier
 from .errors import (
     CountLimitError,
     DPHoneyError,
@@ -33,12 +34,14 @@ from .errors import (
     ModelArtifactDecodeError,
     ModelArtifactExistsError,
     ModelSchemaError,
+    PlantedScanConfigurationError,
     UnknownFormatError,
 )
 from .formats import REGISTRY_VERSION, get_format, list_format_slugs, list_formats
 from .grammar import FormatSpec, Literal, Variable
 from .model_io import SCHEMA_VERSION, load_model, model_to_dict, save_model
 from .realism import REPORT_MAX, compute_report
+from .scanner import PlantedHoneytoken, PlantedMatch, PlantedScanResult, planted_fuzzy_similarity, scan_planted_values
 
 __version__ = "0.1.0"
 
@@ -47,6 +50,7 @@ __all__ = [
     "REPORT_MAX",
     "SCHEMA_VERSION",
     "BigramHoneytokenModel",
+    "ConformalThreshold",
     "CountLimitError",
     "DPHoneyError",
     "EmptyCorpusError",
@@ -58,17 +62,25 @@ __all__ = [
     "ModelArtifactDecodeError",
     "ModelArtifactExistsError",
     "ModelSchemaError",
+    "PlantedHoneytoken",
+    "PlantedMatch",
+    "PlantedScanConfigurationError",
+    "PlantedScanResult",
     "UnknownFormatError",
     "Variable",
     "__version__",
     "build_model",
+    "calibrate_fuzzy_threshold",
     "compute_report",
     "generate_honeytokens",
     "get_format",
+    "is_fuzzy_outlier",
     "list_format_slugs",
     "list_formats",
     "load_model",
     "model_to_dict",
+    "planted_fuzzy_similarity",
     "save_model",
+    "scan_planted_values",
     "train_model",
 ]

@@ -15,18 +15,16 @@ grammar plus a differential-privacy-noised character bigram model.
 
 ## What this is (and is not)
 
-This package is the DP-HONEY generator plus its registry-derived scanner and
-auto-decoy helper. It builds decoys, model artifacts, scanner findings, and
-metrics around the same declarative format registry. It is intentionally small
-and auditable.
+This package is the DP-HONEY generator plus its registry-derived scanner,
+planted-value leak scanner, conformal fuzzy calibration helper, and auto-decoy
+helper. It builds decoys, model artifacts, scanner findings, and metrics around
+the same declarative format registry. It is intentionally small and auditable.
 
 ### Out of scope
 
 These belong to other teammates / future work and are **not** implemented here:
 
-- Conformal calibration
-- Eq.5 catch-probability **accounting**
-- Runtime **gateway** integration
+- Cross-turn fragmentation tracking; that is NIMBUS's job
 - **Tool-call** scanning
 - Provider-valid credential generation
 - Real secret corpus ingestion
@@ -90,6 +88,10 @@ python -m detect.dp_honey scan --file suspect.txt
 python -m detect.dp_honey auto-decoy --file suspect.txt --seed 1
 ```
 
+The repository also includes `scripts/eval_dp_honey.py`, which produces the
+deterministic Table 2-style per-encoding precision/recall summary, conformal
+coverage, and Eq.5 catch-probability accounting used by the capstone eval.
+
 `generate` is capped at 10000 (it streams one token at a time); `report` is
 capped at 5000 (metrics require materializing the whole batch). Oversized counts
 exit nonzero *before* any generation work begins.
@@ -115,6 +117,24 @@ false positives; sufficiently token-like values may still be replaced by the
 unknown fallback. Checksum-confirmed formats report `high` confidence,
 registry-structural matches report `medium`, and unknown fallback matches report
 `low`.
+
+## Planted-value leak scanner
+
+`scan_planted_values` detects whether a finite, known set of planted DP-HONEY
+values appears in model output. Exact hits are threshold-free because the target
+is known: direct text, reverse, leet-normalized text, ROT-N, base64, base32, hex,
+decoded candidate blobs, and within-output fragmentation all count as exact
+planted-value leakage. Findings identify the canary id, hash, source, channel,
+positions when available, and similarity score; they never echo the planted
+value.
+
+The fuzzy/partial channel is separate. `planted_fuzzy_similarity` computes the
+LCS ratio between the planted run and the output, and `calibrate_fuzzy_threshold`
+sets `q_hat` from held-out benign outputs with the adjusted empirical rank
+`ceil((m + 1) * (1 - alpha))`. Exact scanner hits do not use this threshold.
+The Aegis runtime adapter lives in `aegis.stages.dp_honey_stage.DPHoneyStage`:
+it can inject DP-HONEY canaries before forwarding and block post-output exact or
+calibrated fuzzy leaks.
 
 ## Web UI
 
