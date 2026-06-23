@@ -44,6 +44,10 @@ The first runtime spine is implemented and CI-enforced:
 - A `TurnAnnotator` seam that can attach derived metadata before pre-generation
   detectors run, plus a CIFT feature-vector annotator that preserves the
   runtime/import boundary while preparing self-hosted activation features.
+- A CIFT window selector that treats selected-choice readout geometry as
+  primary coverage and payload/query readout as degraded fallback evidence.
+- `NimbusLeakageDetector`, a session detector that accumulates exact or encoded
+  canary leakage signals into a per-session leakage budget.
 - A mock OpenAI-compatible proxy surface for `/health`,
   `/v1/chat/completions`, and `/audit/recent`.
 - Mandatory CI gates for linting, formatting, strict typing, import-boundary
@@ -99,6 +103,39 @@ Run the built-in demo scenarios:
 ```bash
 uv run python scripts/run_demo.py
 ```
+
+Generate controlled trace-collection assignments for human operators:
+
+```bash
+uv run aegis-trace-assignments \
+  --participant alice \
+  --participant bob \
+  --output data/trace_collection/assignments.jsonl
+```
+
+Build normalized records from completed collection inputs:
+
+```bash
+uv run aegis-trace-seed-inputs \
+  --assignments data/trace_collection/assignments.jsonl \
+  --variants-per-label 20 \
+  --output data/trace_collection/collection_inputs.generated.jsonl
+
+uv run aegis-trace-build-records \
+  --assignments data/trace_collection/assignments.jsonl \
+  --inputs data/trace_collection/collection_inputs.generated.jsonl \
+  --output data/trace_collection/records.generated.jsonl \
+  --model-provider mock \
+  --model-id mock-model \
+  --capability-mode offline_eval
+```
+
+The trace-collection harness emits proxy-shaped `NormalizedTurn` records with
+DP-HONEY canaries, labels, families, `SensitiveSpan` metadata, and pending CIFT
+tokenization markers. It is for controlled fake-secret data collection, not for
+recording production credentials. See
+[docs/trace-collection-harness.md](docs/trace-collection-harness.md) for the
+input schema and workflow.
 
 Exercise the mock proxy in Python:
 
@@ -177,7 +214,12 @@ New runtime work must preserve the spine boundaries:
   metadata. Feature-vector annotators may attach derived activation features
   before detectors run, but training pickles and research modules remain in
   `introspection/`.
+- Selected-choice CIFT metadata is the primary runtime route. Broader
+  payload/query readout is degraded fallback coverage and must be labeled as
+  such in detector evidence.
 - DP-HONEY injection/registration and canary detection remain separate stages.
+- NIMBUS-style detectors emit cumulative session risk as ordinary
+  `DetectorResult` values; policy still owns the final action.
 - Real credentials cross runtime boundaries as handles, spans, hashes, or
   evidence, not raw production secrets.
 
@@ -187,5 +229,6 @@ adapter code.
 ## Related Docs
 
 - [Runtime spine](docs/aegis-runtime-spine.md)
+- [Trace collection harness](docs/trace-collection-harness.md)
 - [Contributing](CONTRIBUTING.md)
 - [Asana MCP setup](docs/ASANA_MCP_SETUP.md)

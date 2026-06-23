@@ -6,6 +6,8 @@
 .venv-introspection/
 *.egg-info/
 models/
+data/trace_collection/
+introspection/data/activations/*.pt
 
 __pycache__/
 *.py[cod]
