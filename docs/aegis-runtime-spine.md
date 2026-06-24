@@ -152,6 +152,11 @@ Future branches should add real detectors behind the existing contract:
   converts self-hosted activation capture into the feature vectors consumed by
   `CiftFeatureVectorAnnotator`.
 - DP-HONEY runtime: register honeytokens and populate `sensitive_spans`.
+- DP-HONEY generator integration review: after the `DPHoneyTokenGenerator`
+  branch is reconciled with the runtime spine, verify that the imported code
+  preserves Aegis boundaries. Expect possible cleanup or rewrite work if the
+  standalone generator package leaks across the `HoneytokenLedger`,
+  `CanaryRecord`, `SensitiveSpan`, `DetectorResult`, policy, or audit seams.
 - Canary scanners: extend exact model-output scanning to tool arguments and
   streaming outputs.
 - NIMBUS ledger: emit cumulative session risk as a detector result.
