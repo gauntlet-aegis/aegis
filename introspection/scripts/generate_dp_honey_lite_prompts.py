@@ -3,22 +3,26 @@ from __future__ import annotations
 import argparse
 import sys
 from collections import Counter
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Mapping, Protocol, Sequence, cast
+from typing import Literal, Protocol, TypeAlias, cast
 
 SCRIPT_PATH = Path(__file__).resolve()
 INTROSPECTION_ROOT = SCRIPT_PATH.parents[1]
+REPOSITORY_ROOT = INTROSPECTION_ROOT.parent
 SRC_PATH = INTROSPECTION_ROOT / "src"
-if str(SRC_PATH) not in sys.path:
-    sys.path.insert(0, str(SRC_PATH))
+AEGIS_SRC_PATH = REPOSITORY_ROOT / "src"
+for path in (AEGIS_SRC_PATH, SRC_PATH):
+    if str(path) not in sys.path:
+        sys.path.insert(0, str(path))
 
-from transformers import AutoTokenizer
-
+from aegis.canaries.dp_honey import DPHoneyCanaryGenerator, build_dp_honey_ledger
 from aegis_introspection.honeytokens import (
     CredentialType,
     DpHoneyLiteExampleSpec,
     DpHoneyLiteTemplateSet,
+    RenderedHoneytokenPrompt,
     TokenOffset,
     TokenizedText,
     build_dp_honey_lite_dataset,
@@ -27,6 +31,8 @@ from aegis_introspection.honeytokens import (
     render_honeytoken_prompt,
     write_dp_honey_lite_jsonl,
 )
+
+HoneytokenBackend: TypeAlias = Literal["lite", "dp_honey"]
 
 
 class OffsetTokenizer(Protocol):
@@ -50,6 +56,7 @@ class GenerateDpHoneyLitePromptsConfig:
     examples_per_template: int
     readout_width: int
     template_set: DpHoneyLiteTemplateSet
+    honeytoken_backend: HoneytokenBackend
 
 
 _DEFAULT_OUTPUT_BY_TEMPLATE_SET: dict[DpHoneyLiteTemplateSet, Path] = {
@@ -60,6 +67,14 @@ _DEFAULT_OUTPUT_BY_TEMPLATE_SET: dict[DpHoneyLiteTemplateSet, Path] = {
     "hard_v4_1": INTROSPECTION_ROOT / "data" / "prompts_dp_honey_lite_v4_1.jsonl",
     "hard_v4_3_sealed": INTROSPECTION_ROOT / "data" / "prompts_dp_honey_lite_v4_3_sealed.jsonl",
 }
+_DEFAULT_DP_HONEY_OUTPUT_BY_TEMPLATE_SET: dict[DpHoneyLiteTemplateSet, Path] = {
+    "v1": INTROSPECTION_ROOT / "data" / "prompts_dp_honey_runtime_v1.jsonl",
+    "hard_v2": INTROSPECTION_ROOT / "data" / "prompts_dp_honey_runtime_v2.jsonl",
+    "hard_v3": INTROSPECTION_ROOT / "data" / "prompts_dp_honey_runtime_v3.jsonl",
+    "hard_v4": INTROSPECTION_ROOT / "data" / "prompts_dp_honey_runtime_v4.jsonl",
+    "hard_v4_1": INTROSPECTION_ROOT / "data" / "prompts_dp_honey_runtime_v4_1.jsonl",
+    "hard_v4_3_sealed": INTROSPECTION_ROOT / "data" / "prompts_dp_honey_runtime_v4_3_sealed.jsonl",
+}
 _DEFAULT_SEED_BY_TEMPLATE_SET: dict[DpHoneyLiteTemplateSet, str] = {
     "v1": "aegis-dp-honey-lite-v1",
     "hard_v2": "aegis-dp-honey-lite-v2",
@@ -67,6 +82,18 @@ _DEFAULT_SEED_BY_TEMPLATE_SET: dict[DpHoneyLiteTemplateSet, str] = {
     "hard_v4": "aegis-dp-honey-lite-v4",
     "hard_v4_1": "aegis-dp-honey-lite-v4-1",
     "hard_v4_3_sealed": "aegis-dp-honey-lite-v4-3-sealed",
+}
+_DEFAULT_DP_HONEY_SEED_BY_TEMPLATE_SET: dict[DpHoneyLiteTemplateSet, str] = {
+    "v1": "aegis-dp-honey-runtime-v1",
+    "hard_v2": "aegis-dp-honey-runtime-v2",
+    "hard_v3": "aegis-dp-honey-runtime-v3",
+    "hard_v4": "aegis-dp-honey-runtime-v4",
+    "hard_v4_1": "aegis-dp-honey-runtime-v4-1",
+    "hard_v4_3_sealed": "aegis-dp-honey-runtime-v4-3-sealed",
+}
+_DP_HONEY_CREDENTIAL_FORMATS: dict[str, str] = {
+    "api_key": "openai-project-key",
+    "database_uri": "database-password",
 }
 
 
@@ -88,14 +115,24 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--seed", required=False)
     parser.add_argument("--examples-per-template", required=False, type=int, default=4)
     parser.add_argument("--readout-width", required=False, type=int, default=6)
+    parser.add_argument("--honeytoken-backend", required=False, choices=("lite", "dp_honey"), default="lite")
     return parser
 
 
 def _parse_args(argv: Sequence[str]) -> GenerateDpHoneyLitePromptsConfig:
     namespace = _build_parser().parse_args(argv)
     template_set = cast(DpHoneyLiteTemplateSet, namespace.template_set)
-    output_path = Path(str(namespace.output)) if namespace.output is not None else _DEFAULT_OUTPUT_BY_TEMPLATE_SET[template_set]
-    seed = str(namespace.seed) if namespace.seed is not None else _DEFAULT_SEED_BY_TEMPLATE_SET[template_set]
+    honeytoken_backend = cast(HoneytokenBackend, namespace.honeytoken_backend)
+    output_path = (
+        Path(str(namespace.output))
+        if namespace.output is not None
+        else _default_output_path(template_set=template_set, honeytoken_backend=honeytoken_backend)
+    )
+    seed = (
+        str(namespace.seed)
+        if namespace.seed is not None
+        else _default_seed(template_set=template_set, honeytoken_backend=honeytoken_backend)
+    )
     return GenerateDpHoneyLitePromptsConfig(
         output_path=output_path,
         model_id=str(namespace.model_id),
@@ -105,10 +142,29 @@ def _parse_args(argv: Sequence[str]) -> GenerateDpHoneyLitePromptsConfig:
         examples_per_template=int(namespace.examples_per_template),
         readout_width=int(namespace.readout_width),
         template_set=template_set,
+        honeytoken_backend=honeytoken_backend,
     )
 
 
+def _default_output_path(template_set: DpHoneyLiteTemplateSet, honeytoken_backend: HoneytokenBackend) -> Path:
+    if honeytoken_backend == "lite":
+        return _DEFAULT_OUTPUT_BY_TEMPLATE_SET[template_set]
+    if honeytoken_backend == "dp_honey":
+        return _DEFAULT_DP_HONEY_OUTPUT_BY_TEMPLATE_SET[template_set]
+    raise ValueError(f"Unsupported honeytoken backend '{honeytoken_backend}'.")
+
+
+def _default_seed(template_set: DpHoneyLiteTemplateSet, honeytoken_backend: HoneytokenBackend) -> str:
+    if honeytoken_backend == "lite":
+        return _DEFAULT_SEED_BY_TEMPLATE_SET[template_set]
+    if honeytoken_backend == "dp_honey":
+        return _DEFAULT_DP_HONEY_SEED_BY_TEMPLATE_SET[template_set]
+    raise ValueError(f"Unsupported honeytoken backend '{honeytoken_backend}'.")
+
+
 def _load_tokenizer(config: GenerateDpHoneyLitePromptsConfig) -> OffsetTokenizer:
+    from transformers import AutoTokenizer
+
     tokenizer = AutoTokenizer.from_pretrained(
         config.model_id,
         revision=config.revision,
@@ -159,6 +215,60 @@ def _credential_type_for_index(index: int) -> CredentialType:
     return "database_uri"
 
 
+def _dp_honey_runtime_token(credential_type: CredentialType, seed: str, index: int) -> str:
+    ledger = build_dp_honey_ledger(
+        session_id=seed,
+        generator=DPHoneyCanaryGenerator(credential_formats=dict(_DP_HONEY_CREDENTIAL_FORMATS)),
+    )
+    honeytoken = ledger.plant(
+        slot_name=f"cift_{credential_type}_{index:06d}",
+        credential_type=credential_type,
+        turn_index=index,
+    )
+    return honeytoken.value
+
+
+def _honeytoken_for_backend(
+    credential_type: CredentialType,
+    seed: str,
+    index: int,
+    honeytoken_backend: HoneytokenBackend,
+) -> str:
+    if honeytoken_backend == "lite":
+        return generate_honeytoken(
+            credential_type=credential_type,
+            seed=seed,
+            index=index,
+        )
+    if honeytoken_backend == "dp_honey":
+        return _dp_honey_runtime_token(
+            credential_type=credential_type,
+            seed=seed,
+            index=index,
+        )
+    raise ValueError(f"Unsupported honeytoken backend '{honeytoken_backend}'.")
+
+
+def _rendered_prompt_for_backend(
+    rendered: RenderedHoneytokenPrompt,
+    honeytoken_backend: HoneytokenBackend,
+) -> RenderedHoneytokenPrompt:
+    if honeytoken_backend == "lite":
+        return rendered
+    if honeytoken_backend == "dp_honey":
+        return RenderedHoneytokenPrompt(
+            template_id=rendered.template_id,
+            label=rendered.label,
+            family=rendered.family,
+            text=rendered.text,
+            tags=(*rendered.tags, "dp_honey_runtime"),
+            secret_span=rendered.secret_span,
+            query_span=rendered.query_span,
+            payload_span=rendered.payload_span,
+        )
+    raise ValueError(f"Unsupported honeytoken backend '{honeytoken_backend}'.")
+
+
 def _example_specs(
     tokenizer: OffsetTokenizer,
     config: GenerateDpHoneyLitePromptsConfig,
@@ -173,12 +283,16 @@ def _example_specs(
     for template in dp_honey_lite_templates(template_set=config.template_set):
         for template_index in range(config.examples_per_template):
             credential_type = _credential_type_for_index(global_index)
-            honeytoken = generate_honeytoken(
+            honeytoken = _honeytoken_for_backend(
                 credential_type=credential_type,
                 seed=config.seed,
                 index=global_index,
+                honeytoken_backend=config.honeytoken_backend,
             )
-            rendered = render_honeytoken_prompt(template=template, secret=honeytoken)
+            rendered = _rendered_prompt_for_backend(
+                rendered=render_honeytoken_prompt(template=template, secret=honeytoken),
+                honeytoken_backend=config.honeytoken_backend,
+            )
             specs.append(
                 (
                     f"{template.template_id}_{template_index:03d}",
